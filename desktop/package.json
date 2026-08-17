@@ -77,6 +77,10 @@
       {
         "from": "../models",
         "to": "models"
+      },
+      {
+        "from": "gh-token",
+        "to": "gh-token"
       }
     ],
     "win": {
