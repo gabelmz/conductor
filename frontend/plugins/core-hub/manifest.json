@@ -1,0 +1,13 @@
+{
+  "id": "core-hub",
+  "name": "Tool Hub",
+  "version": "0.1.0",
+  "description": "Team tool registry — catalog every app, skill, module, plugin and theme with status, owner and tags (ported from LAW's core-hub).",
+  "author": "Gabe Maher",
+  "main": "main.js",
+  "pages": ["hub"],
+  "commands": ["open", "new-card"],
+  "themes": [],
+  "railItems": [],
+  "permissions": []
+}

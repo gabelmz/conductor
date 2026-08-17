@@ -1,0 +1,103 @@
+{
+  "name": "conductor",
+  "productName": "Conductor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Conductor — business process automation hub with AI workflows (desktop)",
+  "main": "main.cjs",
+  "author": "Gabe Maher",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron ui-smoke.cjs",
+    "dist": "electron-builder --win nsis portable",
+    "cli": "node ../scripts/conductor-cli.mjs",
+    "health": "node ../scripts/conductor-cli.mjs health",
+    "doctor": "node ../scripts/conductor-cli.mjs doctor",
+    "checksums": "node ../scripts/conductor-cli.mjs checksums",
+    "release": "node ../scripts/conductor-cli.mjs release"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "build": {
+    "appId": "com.luminize.conductor",
+    "productName": "Conductor",
+    "publish": {
+      "provider": "github",
+      "owner": "gabelmz",
+      "repo": "conductor",
+      "private": true
+    },
+    "directories": {
+      "output": "../dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**"
+        ]
+      },
+      {
+        "from": "../frontend",
+        "to": "frontend"
+      },
+      {
+        "from": "../.venv",
+        "to": "venv",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/pip/**",
+          "!**/pip-*.dist-info/**",
+          "!**/setuptools/**",
+          "!**/setuptools-*.dist-info/**",
+          "!**/pkg_resources/**",
+          "!**/_distutils_hack/**",
+          "!**/distutils-precedence.pth",
+          "!**/Scripts/pip*.exe",
+          "!**/Scripts/fastapi.exe",
+          "!**/Scripts/idna.exe",
+          "!**/Scripts/normalizer.exe"
+        ]
+      },
+      {
+        "from": "../models",
+        "to": "models"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Conductor",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "artifactName": "Conductor-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Conductor-Portable-${version}.${ext}"
+    }
+  }
+}

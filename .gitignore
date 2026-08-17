@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime data (db, configs, logs, keys, uploads) — regenerated locally, never commit
+data/
+
+# Node / Electron
+node_modules/
+desktop/parker.asar
+desktop/build/
+
+# Bundled LLM models (large binaries)
+models/
+
+# Optional read-only token for private-repo auto-update (never commit)
+desktop/gh-token
+
+# Packaging output
+dist/

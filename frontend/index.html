@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#F8FAFF" />
+    <title>Conductor</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/assets/codicon.css" />
+    <script>
+    /* No-flash theme bootstrap — applies the last-saved UI theme before first paint. */
+    (function () {
+      try {
+        var raw = localStorage.getItem('conductor.ui');
+        if (!raw) return;
+        var cfg = JSON.parse(raw);
+        var t = cfg.tokens || {};
+        var root = document.documentElement;
+        function set(p, v) { if (v !== undefined && v !== null) root.style.setProperty(p, String(v)); }
+        set('--t-theme', cfg.theme || t.theme || 'custom');
+        set('--t-mode', cfg.mode || t.mode || 'dark');
+        set('--t-scheme', cfg.mode || t.mode || 'dark');
+        set('--t-on-primary', t.onPrimary || '#FFFFFF');
+        set('--t-gradient1', t.gradient1);
+        set('--t-gradient2', t.gradient2);
+        set('--t-background1', t.background1);
+        set('--t-background2', t.background2);
+        var g;
+        if (t.surface) { g = t.surface; set('--t-surface-base', g.base); set('--t-surface-raised', g.raised); set('--t-surface-overlay', g.overlay); }
+        if (t.function) { g = t.function; set('--t-function-primary', g.primary); set('--t-function-secondary', g.secondary); set('--t-function-success', g.success); set('--t-function-warning', g.warning); set('--t-function-danger', g.danger); set('--t-function-info', g.info); }
+        if (t.opacity) { g = t.opacity; set('--t-opacity-subtle', g.subtle); set('--t-opacity-muted', g.muted); set('--t-opacity-half', g.half); set('--t-opacity-strong', g.strong); set('--t-opacity-solid', g.solid); }
+        if (t.density) { g = t.density; set('--t-density-scale', g.scale); set('--t-density-unit', g.unit); set('--t-density-controlHeight', g.controlHeight); set('--t-density-padding', g.padding); }
+        if (t.edges) { g = t.edges; set('--t-edges-radius', g.radius); set('--t-edges-borderWidth', g.borderWidth); set('--t-edges-borderColor', g.borderColor); }
+        if (t.highlights) { g = t.highlights; set('--t-highlights-topEdge', g.topEdge); set('--t-highlights-glow', g.glow); set('--t-highlights-selection', g.selection); }
+        if (t.elevation) { g = t.elevation; set('--t-elevation-1', g['1']); set('--t-elevation-2', g['2']); set('--t-elevation-3', g['3']); }
+        if (t.depth) { g = t.depth; set('--t-depth-perspective', g.perspective); set('--t-depth-layerOffset', g.layerOffset); set('--t-depth-innerShadow', g.innerShadow); }
+        if (t.gloss) { g = t.gloss; set('--t-gloss-intensity', g.intensity); set('--t-gloss-angle', g.angle); set('--t-gloss-sheen', g.sheen); set('--t-gloss-blend', g.blend); }
+        if (t.headerFont) { g = t.headerFont; set('--t-headerFont-family', g.family); set('--t-headerFont-weight', g.weight); set('--t-headerFont-tracking', g.tracking); }
+        if (t.bodyFont) { g = t.bodyFont; set('--t-bodyFont-family', g.family); set('--t-bodyFont-weight', g.weight); set('--t-bodyFont-size', g.size); set('--t-bodyFont-lineHeight', g.lineHeight); }
+        if (t.codeFont) { g = t.codeFont; set('--t-codeFont-family', g.family); set('--t-codeFont-size', g.size); set('--t-codeFont-ligatures', g.ligatures ? 1 : 0); }
+        if (t.colorFont) { g = t.colorFont; set('--t-color-heading', g.heading); set('--t-color-body', g.body); set('--t-color-muted', g.muted); set('--t-color-link', g.link); set('--t-color-code', g.code); }
+        if (t.motion) { g = t.motion; set('--t-motion-duration', g.duration); set('--t-motion-easing', g.easing); }
+        if (t.blur) { set('--t-blur-backdrop', t.blur.backdrop); }
+        if (t.overrides) { for (var k in t.overrides) root.style.setProperty(k, String(t.overrides[k])); }
+        root.dataset.theme = cfg.theme || t.theme || 'custom';
+        root.dataset.mode = cfg.mode || t.mode || 'dark';
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta && t.background1) meta.content = t.background1;
+      } catch (e) { /* default theme stays */ }
+    })();
+    </script>
+    <script src="/static/theme.js"></script>
+    <script src="/static/app.js" defer></script>
+    <script src="/static/plugins/runtime.js" defer></script>
+    <script src="/static/palette.js" defer></script>
+    <script src="/static/split.js" defer></script>
+  </head>
+  <body>
+    <div id="app" class="app-root">
+      <!-- ============ Titlebar ============ -->
+      <header class="titlebar">
+        <div class="titlebar-left" id="btn-home" title="Home — back to chat">
+          <div class="app-logo" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M8 1.2 13.6 4v4.4c0 3.3-2.2 5.6-5.6 6.6-3.4-1-5.6-3.3-5.6-6.6V4L8 1.2Z" fill="currentColor" opacity=".9"/>
+              <path d="M4.2 8h2M8.2 5.6 8.2 10.4M6.2 8h4" stroke="#0D2F86" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="titlebar-title">Conductor</span>
+          <span class="titlebar-subtitle">business process automation</span>
+        </div>
+        <div class="titlebar-tools">
+          <button class="tb-btn" id="btn-dash" title="Dashboard" aria-label="Dashboard">
+            <span class="codicon codicon-dashboard"></span>
+          </button>
+          <button class="tb-btn" id="btn-home-tb" title="Chat" aria-label="Chat">
+            <span class="codicon codicon-comment-discussion"></span>
+          </button>
+          <button class="tb-btn" id="btn-plug" title="Integrations" aria-label="Integrations">
+            <span class="codicon codicon-plug"></span>
+          </button>
+          <div class="tb-sep"></div>
+          <button class="tb-btn" id="btn-settings" title="Settings" aria-label="Settings">
+            <span class="codicon codicon-settings-gear"></span>
+          </button>
+          <button class="tb-btn" id="btn-min" title="Minimize" aria-label="Minimize">
+            <span class="codicon codicon-chrome-minimize"></span>
+          </button>
+          <button class="tb-btn" id="btn-max" title="Maximize" aria-label="Maximize">
+            <span class="codicon codicon-chrome-maximize"></span>
+          </button>
+          <button class="tb-btn tb-close" id="btn-close" title="Close" aria-label="Close">
+            <span class="codicon codicon-chrome-close"></span>
+          </button>
+        </div>
+      </header>
+
+      <div class="app-body">
+        <!-- ============ Left sidebar ============ -->
+        <nav class="sidebar" id="sidebar">
+          <div class="sidebar-topbar">
+            <span class="sidebar-brand">Conductor</span>
+            <button class="side-btn" id="btn-side-collapse" title="Collapse to icons" aria-label="Collapse to icons">
+              <span class="codicon codicon-chevron-left"></span>
+            </button>
+            <button class="side-btn" id="btn-side-expand" title="Expand" aria-label="Expand" hidden>
+              <span class="codicon codicon-chevron-right"></span>
+            </button>
+            <button class="side-btn" id="btn-side-tuck" title="Tuck into the left edge" aria-label="Tuck away">
+              <span class="codicon codicon-layout-sidebar-left-off"></span>
+            </button>
+          </div>
+          <div class="sidebar-search">
+            <span class="codicon codicon-search"></span>
+            <input id="sidebar-search-input" type="text" placeholder="Search SOPs, processes…" />
+            <span class="kbd-hint">/</span>
+          </div>
+          <div class="sidebar-scroll">
+            <div class="sidebar-section-label">Main</div>
+            <button class="sidebar-item active" id="nav-chat" data-view="chat">
+              <span class="codicon codicon-comment-discussion"></span>
+              <span>Chat</span>
+            </button>
+            <button class="sidebar-item" id="nav-dashboard" data-view="dashboard">
+              <span class="codicon codicon-dashboard"></span>
+              <span>Dashboard</span>
+            </button>
+
+            <div class="sidebar-section-label sidebar-section-gap">Operations</div>
+            <button class="sidebar-item" id="nav-checks" data-view="checks">
+              <span class="codicon codicon-shield"></span>
+              <span>Compliance</span>
+              <span class="sidebar-count" id="count-checks">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-products" data-view="products">
+              <span class="codicon codicon-package"></span>
+              <span>Products</span>
+              <span class="sidebar-count" id="count-products">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-catalog" data-view="catalog">
+              <span class="codicon codicon-cloud-upload"></span>
+              <span>Catalog</span>
+              <span class="sidebar-count" id="count-files">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-agents" data-view="agents">
+              <span class="codicon codicon-robot"></span>
+              <span>Agents</span>
+              <span class="sidebar-count" id="count-agents">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-tasks" data-view="tasks">
+              <span class="codicon codicon-checklist"></span>
+              <span>Action Queue</span>
+              <span class="sidebar-count" id="count-tasks">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-regs" data-view="regs">
+              <span class="codicon codicon-book"></span>
+              <span>Regulations</span>
+            </button>
+            <button class="sidebar-item" id="nav-ingest" data-view="ingest">
+              <span class="codicon codicon-cloud-upload"></span>
+              <span>Catalog Ingest</span>
+            </button>
+            <button class="sidebar-item" id="nav-variation" data-view="variation">
+              <span class="codicon codicon-versions"></span>
+              <span>Variation Validator</span>
+            </button>
+
+            <div class="sidebar-section-label sidebar-section-gap">Automate</div>
+            <button class="sidebar-item" id="nav-processes" data-view="processes">
+              <span class="codicon codicon-lightbulb"></span>
+              <span>Process Discovery</span>
+              <span class="sidebar-count" id="count-processes">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-automations" data-view="automations">
+              <span class="codicon codicon-zap"></span>
+              <span>Automations</span>
+              <span class="sidebar-count" id="count-automations">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-ai" data-view="ai">
+              <span class="codicon codicon-chat-sparkle"></span>
+              <span>AI Workflows</span>
+              <span class="sidebar-count" id="count-ai">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-sops" data-view="sops">
+              <span class="codicon codicon-book"></span>
+              <span>SOPs &amp; Runbooks</span>
+              <span class="sidebar-count" id="count-sops">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-bernie" data-view="bernie">
+              <span class="codicon codicon-graph"></span>
+              <span>Flow Canvas</span>
+            </button>
+
+            <div class="sidebar-section-label sidebar-section-gap">Integrations</div>
+            <button class="sidebar-item" id="nav-integrations" data-view="integrations">
+              <span class="codicon codicon-plug"></span>
+              <span>Integrations</span>
+            </button>
+            <button class="sidebar-item" id="nav-asana" data-view="asana">
+              <span class="codicon codicon-organization"></span>
+              <span>Asana</span>
+              <span class="sidebar-count" id="count-asana">0</span>
+            </button>
+            <button class="sidebar-item" id="nav-events" data-view="events">
+              <span class="codicon codicon-radio-tower"></span>
+              <span>Inbound Events</span>
+              <span class="sidebar-count" id="count-events">0</span>
+            </button>
+
+            <div class="sidebar-section-label sidebar-section-gap">System</div>
+            <button class="sidebar-item" id="nav-requests" data-view="requests">
+              <span class="codicon codicon-arrow-swap"></span>
+              <span>HTTP Requests</span>
+              <span class="sidebar-count" id="count-requests">0</span>
+            </button>
+
+            <div class="sidebar-footer">
+              <div class="profile-switcher">
+                <span class="profile-avatar" id="profile-avatar">L</span>
+                <span class="profile-name">luminize</span>
+                <span class="codicon codicon-chevron-down"></span>
+              </div>
+              <div class="sidebar-hint">POST JSON to /webhooks/automation/&lt;source&gt; to trigger automations.</div>
+            </div>
+          </div>
+        </nav>
+
+        <!-- ============ Resize handle ============ -->
+        <div class="sash" id="sash"></div>
+
+        <!-- ============ Main area ============ -->
+        <main class="thread" id="thread">
+          <div class="thread-scroll" id="thread-scroll">
+            <!-- chat messages injected here -->
+          </div>
+          <div class="view-root" id="view-root" hidden></div>
+
+          <!-- ============ Composer ============ -->
+          <div class="composer-shell" id="composer-shell">
+            <div class="composer-ai" id="composer-ai" hidden>
+              <select id="composer-provider" title="AI provider" aria-label="AI provider"></select>
+              <select id="composer-model" title="Model" aria-label="Model"></select>
+            </div>
+            <div class="chat-context" id="chat-context" hidden></div>
+            <div class="composer" id="composer">
+              <div class="composer-attach">
+                <button class="c-btn" id="btn-skills" title="Toggle workspace skills" aria-label="Skills" aria-expanded="false">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 2.5h11v3h-11zM2.5 6.5h11v3h-11zM2.5 10.5h7v3h-7z" stroke="currentColor" stroke-width="1.2"/></svg>
+                </button>
+                <button class="c-btn" id="btn-doc" title="Reference a document in chat (txt/md/csv/json/ndjson)" aria-label="Reference document">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 1.5h5l3 3v10H4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9 1.5v3h3M6.5 8h3M6.5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                </button>
+                <button class="c-btn" id="btn-attach" title="Upload catalog file (CSV/TSV/JSON/NDJSON/XLSX)" aria-label="Attach file">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8.5 4.5 4.8 8.2a2.4 2.4 0 0 0 3.4 3.4l4.2-4.2a3.7 3.7 0 0 0-5.3-5.3L3.7 6.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+              <textarea id="composer-input" class="composer-input" rows="1"
+                placeholder="Ask Conductor… reference a document or toggle a skill, paste a product ({\"sku\":…,\"name\":…}) to check compliance, or drop a catalog file  (Ctrl+Enter)"></textarea>
+              <div class="composer-send">
+                <button class="c-btn c-send" id="btn-send" title="Send" aria-label="Send">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 8 13.5 3.5 11 8l2.5 4.5L2.5 8Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="skills-popover" id="skills-popover" hidden></div>
+            <div class="upload-bar" id="upload-bar" hidden>
+              <div class="upload-meta">
+                <span id="upload-name">catalog.csv</span>
+                <span id="upload-progress-label">0%</span>
+              </div>
+              <div class="upload-track"><div class="upload-fill" id="upload-fill" style="width:0%"></div></div>
+              <div class="upload-status" id="upload-status">Uploading chunks…</div>
+            </div>
+          </div>
+        </main>
+
+        <!-- ============ Right pane ============ -->
+        <div class="sash sash-r" id="sash-r" title="Drag to resize"></div>
+        <aside class="right-pane" id="right-pane">
+          <div class="right-pane-header">
+            <div class="pane-tabs" id="pane-tabs">
+              <button class="pane-tab active" data-pane="folders" title="Workspace folders">
+                <span class="codicon codicon-folder-opened"></span> Folders
+              </button>
+              <button class="pane-tab" data-pane="activity" title="Automation activity">
+                <span class="codicon codicon-pulse"></span> Activity
+              </button>
+            </div>
+            <button class="tb-btn" id="btn-pane-close" title="Close panel" aria-label="Close panel">
+              <svg width="13" height="13" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="pane-tab-body active" id="pane-folders">
+            <div class="pane-toolbar">
+              <span class="codicon codicon-search"></span>
+              <input id="pane-search" type="text" placeholder="Filter folders…" />
+            </div>
+            <div class="folder-breadcrumb" id="folder-breadcrumb"></div>
+            <div class="folder-tree" id="folder-tree"></div>
+            <div class="folder-hint">Luminize workspace — <span id="folder-hint-root">Development</span> · click a folder to expand</div>
+          </div>
+          <div class="pane-tab-body" id="pane-activity">
+            <div class="pane-toolbar">
+              <button class="btn-secondary btn-sm" id="btn-activity-refresh">Refresh</button>
+            </div>
+            <div class="activity-list" id="activity-list"></div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- ============ Statusbar ============ -->
+      <footer class="statusbar" id="statusbar">
+        <div class="status-left">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Connected</span>
+        </div>
+        <div class="status-right">
+          <button class="status-btn" id="btn-reports" title="Report Management" aria-label="Report Management"><span class="codicon codicon-graph"></span></button>
+          <button class="status-btn" id="btn-guidelines" title="Attribute Guidelines" aria-label="Attribute Guidelines"><span class="codicon codicon-symbol-property"></span></button>
+          <span class="status-sep">·</span>
+          <span id="status-model" title="AI model in use">—</span>
+          <span class="status-sep">·</span>
+          <span id="status-tokens" title="Tokens used by the model">—</span>
+          <span class="status-sep">·</span>
+          <span id="status-conn" title="Connections: llama server, Asana sync, database, automations">—</span>
+        </div>
+      </footer>
+    </div>
+
+    <!-- ============ Generic modal ============ -->
+    <div class="modal-backdrop" id="modal-backdrop" hidden>
+      <div class="modal" id="modal">
+        <div class="modal-header">
+          <span id="modal-title">Modal</span>
+          <button class="tb-btn" id="btn-modal-close">
+            <svg width="13" height="13" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+        <div class="modal-footer" id="modal-footer"></div>
+      </div>
+    </div>
+
+    <!-- ============ Settings modal ============ -->
+    <div class="modal-backdrop" id="settings-backdrop" hidden>
+      <div class="modal settings-modal" id="settings-modal">
+        <div class="modal-header">
+          <span>Settings</span>
+          <button class="tb-btn" id="btn-settings-close">
+            <svg width="13" height="13" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="settings-shell">
+          <nav class="settings-nav" id="settings-nav">
+            <button class="settings-nav-item active" data-stab="appearance"><span class="codicon codicon-symbol-color"></span> Appearance</button>
+            <button class="settings-nav-item" data-stab="chat"><span class="codicon codicon-comment-discussion"></span> AI Chat</button>
+            <button class="settings-nav-item" data-stab="asana"><span class="codicon codicon-organization"></span> Asana Sync</button>
+            <button class="settings-nav-item" data-stab="layout"><span class="codicon codicon-layout"></span> Layout</button>
+            <div class="settings-nav-label">System</div>
+            <button class="settings-nav-item" data-stab="advanced"><span class="codicon codicon-json"></span> Advanced</button>
+            <button class="settings-nav-item" data-stab="about"><span class="codicon codicon-info"></span> About</button>
+          </nav>
+          <div class="settings-content" id="settings-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Toasts ============ -->
+    <div class="toast-stack" id="toast-stack"></div>
+
+    <!-- ============ Tucked-nav tab (visible when sidebar is fully hidden) ============ -->
+    <div id="side-tab" title="Open navigation" aria-label="Open navigation">
+      <span class="codicon codicon-chevron-right"></span>
+    </div>
+  </body>
+</html>
