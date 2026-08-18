@@ -53,7 +53,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.1.0",
+    version="1.3.0",
 )
 
 app.add_middleware(
@@ -95,7 +95,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "1.1.0",
+        "version": "1.3.0",
         "products": storage.count_products(),
     }
 
@@ -684,7 +684,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "1.1.0",
+        "version": "1.3.0",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,
