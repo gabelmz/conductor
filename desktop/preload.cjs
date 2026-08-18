@@ -22,4 +22,10 @@ contextBridge.exposeInMainWorld('desktop', {
     get: (providerId) => ipcRenderer.invoke('keys:get', providerId),
     has: (providerId) => ipcRenderer.invoke('keys:has', providerId),
   },
+  // Auto-update (electron-updater): the renderer drives "Check for updates"
+  // from About → Software update and receives live status events.
+  getUpdateInfo: () => ipcRenderer.invoke('updates:info'),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+  onUpdateEvent: (cb) => ipcRenderer.on('updates:event', (_e, data) => cb(data)),
 });

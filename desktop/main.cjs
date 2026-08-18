@@ -6,7 +6,7 @@
  * the titlebar controls (min/max/close) over IPC.
  */
 const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage } = require('electron');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const net = require('node:net');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -49,11 +49,33 @@ function findFreePort() {
 let backendProc = null;
 let backendPort = 8790;
 let win = null;
+let autoUpdater = null; // electron-updater instance, module scope so IPC can reach it
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function loadStatus(msg) {
   try { win?.webContents.send('load:status', msg); } catch { /* window gone */ }
+}
+
+// Kill the backend AND its whole process tree so nothing keeps running after
+// the window closes. On Windows `child.kill()` only terminates the direct
+// python process; the backend can spawn its own children (e.g. the local
+// llama.cpp server, or a uvicorn reloader) which would otherwise be orphaned
+// and leave their ports bound forever.
+function killBackend() {
+  const proc = backendProc;
+  backendProc = null;
+  if (!proc || proc.killed) return;
+  const pid = proc.pid;
+  if (process.platform === 'win32' && pid) {
+    try {
+      // /T kills the tree, /F forces (no graceful-dialog hang), windowsHide
+      // stops a console window flashing at shutdown.
+      spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+      return;
+    } catch { /* fall through to a plain kill */ }
+  }
+  try { proc.kill(); } catch { /* already gone */ }
 }
 
 async function startBackend() {
@@ -81,9 +103,13 @@ async function startBackend() {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
-  backendProc.stdout.on('data', capture);
-  backendProc.stderr.on('data', capture);
-  backendProc.on('exit', (code) => { logStream.write(`[backend] exited code=${code}\n`); });
+  const child = backendProc;
+  child.stdout.on('data', capture);
+  child.stderr.on('data', capture);
+  child.on('exit', (code) => {
+    logStream.write(`[backend] exited code=${code}\n`);
+    if (backendProc === child) backendProc = null;
+  });
 
   // Wait for the backend to answer /api/health. First launch of the portable
   // extracts ~100MB and antivirus scans it, so be generous (90s) and tell the
@@ -243,11 +269,24 @@ function readUpdateToken() {
 
 function setupAutoUpdater() {
   if (!app.isPackaged) return; // dev / smoke runs never check for updates
-  let au;
-  try { au = require('electron-updater').autoUpdater; } catch { return; }
-  au.autoDownload = true;
-  au.autoInstallOnAppQuit = true;
-  au.on('update-downloaded', (info) => {
+  try { autoUpdater = require('electron-updater').autoUpdater; } catch { return; }
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  // Forward every updater event to the renderer (About → Software update) so
+  // the UI can reflect check/download/error state live.
+  const emit = (event, data) => {
+    try { win?.webContents.send('updates:event', { event, ...(data || {}) }); } catch { /* window gone */ }
+  };
+
+  autoUpdater.on('checking-for-update', () => emit('checking-for-update'));
+  autoUpdater.on('update-available', (info) => emit('update-available', { version: info && info.version }));
+  autoUpdater.on('update-not-available', (info) => emit('update-not-available', { version: info && info.version }));
+  autoUpdater.on('download-progress', (p) => emit('download-progress', {
+    percent: Math.round(p.percent || 0), transferred: p.transferred, total: p.total,
+  }));
+  autoUpdater.on('update-downloaded', (info) => {
+    emit('update-downloaded', { version: info && info.version });
     if (!win) return;
     dialog.showMessageBox(win, {
       type: 'info',
@@ -257,18 +296,43 @@ function setupAutoUpdater() {
       buttons: ['Restart now', 'Later'],
       defaultId: 0,
       cancelId: 1,
-    }).then(({ response }) => { if (response === 0) au.quitAndInstall(); });
+    }).then(({ response }) => { if (response === 0) autoUpdater.quitAndInstall(); });
   });
-  au.on('error', () => { /* non-fatal: stay silent offline / unauthenticated */ });
+  autoUpdater.on('error', (err) => emit('error', { message: String((err && err.message) || err) }));
+
   const token = readUpdateToken();
   try {
-    au.setFeedURL({
+    autoUpdater.setFeedURL({
       provider: 'github', owner: 'gabelmz', repo: 'conductor', private: true,
       ...(token ? { token } : {}),
     });
   } catch { /* keep electron-builder publish defaults */ }
-  au.checkForUpdatesAndNotify().catch(() => {});
+  autoUpdater.checkForUpdatesAndNotify().catch(() => {});
 }
+
+// --- updates IPC (About → Software update) ---------------------------------
+ipcMain.handle('updates:info', () => ({
+  version: app.getVersion(),
+  isPackaged: app.isPackaged,
+  enabled: !!autoUpdater,
+}));
+
+ipcMain.handle('updates:check', async () => {
+  if (!autoUpdater) return { available: false, reason: 'updates-disabled' };
+  try {
+    const res = await autoUpdater.checkForUpdates();
+    const info = res && res.updateInfo ? res.updateInfo : null;
+    return { available: !!info, version: info ? info.version : null };
+  } catch (err) {
+    return { available: false, error: String((err && err.message) || err) };
+  }
+});
+
+ipcMain.handle('updates:install', () => {
+  if (!autoUpdater) return { ok: false, error: 'updates-disabled' };
+  autoUpdater.quitAndInstall();
+  return { ok: true };
+});
 
 app.whenReady().then(async () => {
   createWindow(); // instant paint with loading screen
@@ -281,7 +345,7 @@ app.whenReady().then(async () => {
     // cold) or hit a transient lock — give it one clean retry before failing.
     try {
       loadStatus('Retrying backend startup…');
-      if (backendProc) { try { backendProc.kill(); } catch { /* already gone */ } }
+      killBackend();
       await sleep(600);
       await startBackend();
       win?.loadURL(`http://127.0.0.1:${backendPort}/`);
@@ -297,9 +361,10 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  killBackend(); // belt-and-braces: free the port/process even if quit is blocked
   app.quit();
 });
 
 app.on('before-quit', () => {
-  if (backendProc) backendProc.kill();
+  killBackend();
 });

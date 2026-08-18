@@ -242,6 +242,30 @@ def init_db() -> None:
             note TEXT DEFAULT '',
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS flatfile_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            product_type TEXT DEFAULT '',
+            columns TEXT DEFAULT '[]',           -- json: [{key,label,required,values,example}]
+            header_note TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS data_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            source TEXT DEFAULT 'products',
+            config TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS features (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            spec TEXT DEFAULT '{}',           -- json: {rating_label, factors[], actions[], source_report}
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """
     )
     conn.commit()

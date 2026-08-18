@@ -39,8 +39,10 @@ import asana_sync
 # Ensure schema exists (idempotent; creates any missing tables incl. tasks)
 storage.init_db()
 from hub import init_hub_db
+from keepa import init_keepa_db
 
 init_hub_db()
+init_keepa_db()
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -746,11 +748,23 @@ from plugins import router as plugins_router
 from hub import router as hub_router
 from reports import router as reports_router
 from guidelines import router as guidelines_router
+from flatfiles import router as flatfiles_router
+from svl import router as svl_router
+from data import router as data_router
+from features import router as features_router
+from brandcompare import router as brandcompare_router
+from keepa import router as keepa_router
 
 app.include_router(plugins_router)
 app.include_router(hub_router)
 app.include_router(reports_router)
 app.include_router(guidelines_router)
+app.include_router(flatfiles_router)
+app.include_router(svl_router)
+app.include_router(data_router)
+app.include_router(features_router)
+app.include_router(brandcompare_router)
+app.include_router(keepa_router)
 
 
 # --------------------------------------------------------------------------

@@ -51,6 +51,7 @@
     })();
     </script>
     <script src="/static/theme.js"></script>
+    <script src="/static/sidebar.js" defer></script>
     <script src="/static/app.js" defer></script>
     <script src="/static/plugins/runtime.js" defer></script>
     <script src="/static/palette.js" defer></script>
@@ -116,113 +117,14 @@
             <input id="sidebar-search-input" type="text" placeholder="Search SOPs, processes…" />
             <span class="kbd-hint">/</span>
           </div>
-          <div class="sidebar-scroll">
-            <div class="sidebar-section-label">Main</div>
-            <button class="sidebar-item active" id="nav-chat" data-view="chat">
-              <span class="codicon codicon-comment-discussion"></span>
-              <span>Chat</span>
-            </button>
-            <button class="sidebar-item" id="nav-dashboard" data-view="dashboard">
-              <span class="codicon codicon-dashboard"></span>
-              <span>Dashboard</span>
-            </button>
-
-            <div class="sidebar-section-label sidebar-section-gap">Operations</div>
-            <button class="sidebar-item" id="nav-checks" data-view="checks">
-              <span class="codicon codicon-shield"></span>
-              <span>Compliance</span>
-              <span class="sidebar-count" id="count-checks">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-products" data-view="products">
-              <span class="codicon codicon-package"></span>
-              <span>Products</span>
-              <span class="sidebar-count" id="count-products">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-catalog" data-view="catalog">
-              <span class="codicon codicon-cloud-upload"></span>
-              <span>Catalog</span>
-              <span class="sidebar-count" id="count-files">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-agents" data-view="agents">
-              <span class="codicon codicon-robot"></span>
-              <span>Agents</span>
-              <span class="sidebar-count" id="count-agents">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-tasks" data-view="tasks">
-              <span class="codicon codicon-checklist"></span>
-              <span>Action Queue</span>
-              <span class="sidebar-count" id="count-tasks">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-regs" data-view="regs">
-              <span class="codicon codicon-book"></span>
-              <span>Regulations</span>
-            </button>
-            <button class="sidebar-item" id="nav-ingest" data-view="ingest">
-              <span class="codicon codicon-cloud-upload"></span>
-              <span>Catalog Ingest</span>
-            </button>
-            <button class="sidebar-item" id="nav-variation" data-view="variation">
-              <span class="codicon codicon-versions"></span>
-              <span>Variation Validator</span>
-            </button>
-
-            <div class="sidebar-section-label sidebar-section-gap">Automate</div>
-            <button class="sidebar-item" id="nav-processes" data-view="processes">
-              <span class="codicon codicon-lightbulb"></span>
-              <span>Process Discovery</span>
-              <span class="sidebar-count" id="count-processes">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-automations" data-view="automations">
-              <span class="codicon codicon-zap"></span>
-              <span>Automations</span>
-              <span class="sidebar-count" id="count-automations">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-ai" data-view="ai">
-              <span class="codicon codicon-chat-sparkle"></span>
-              <span>AI Workflows</span>
-              <span class="sidebar-count" id="count-ai">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-sops" data-view="sops">
-              <span class="codicon codicon-book"></span>
-              <span>SOPs &amp; Runbooks</span>
-              <span class="sidebar-count" id="count-sops">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-bernie" data-view="bernie">
-              <span class="codicon codicon-graph"></span>
-              <span>Flow Canvas</span>
-            </button>
-
-            <div class="sidebar-section-label sidebar-section-gap">Integrations</div>
-            <button class="sidebar-item" id="nav-integrations" data-view="integrations">
-              <span class="codicon codicon-plug"></span>
-              <span>Integrations</span>
-            </button>
-            <button class="sidebar-item" id="nav-asana" data-view="asana">
-              <span class="codicon codicon-organization"></span>
-              <span>Asana</span>
-              <span class="sidebar-count" id="count-asana">0</span>
-            </button>
-            <button class="sidebar-item" id="nav-events" data-view="events">
-              <span class="codicon codicon-radio-tower"></span>
-              <span>Inbound Events</span>
-              <span class="sidebar-count" id="count-events">0</span>
-            </button>
-
-            <div class="sidebar-section-label sidebar-section-gap">System</div>
-            <button class="sidebar-item" id="nav-requests" data-view="requests">
-              <span class="codicon codicon-arrow-swap"></span>
-              <span>HTTP Requests</span>
-              <span class="sidebar-count" id="count-requests">0</span>
-            </button>
-
-            <div class="sidebar-footer">
-              <div class="profile-switcher">
-                <span class="profile-avatar" id="profile-avatar">L</span>
-                <span class="profile-name">luminize</span>
-                <span class="codicon codicon-chevron-down"></span>
-              </div>
-              <div class="sidebar-hint">POST JSON to /webhooks/automation/&lt;source&gt; to trigger automations.</div>
+          <div class="sidebar-scroll" id="sidebar-scroll"></div>
+          <div class="sidebar-footer">
+            <div class="profile-switcher">
+              <span class="profile-avatar" id="profile-avatar">L</span>
+              <span class="profile-name">luminize</span>
+              <span class="codicon codicon-chevron-down"></span>
             </div>
+            <div class="sidebar-hint">POST JSON to /webhooks/automation/&lt;source&gt; to trigger automations.</div>
           </div>
         </nav>
 
@@ -255,7 +157,7 @@
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8.5 4.5 4.8 8.2a2.4 2.4 0 0 0 3.4 3.4l4.2-4.2a3.7 3.7 0 0 0-5.3-5.3L3.7 6.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
                 </button>
               </div>
-              <textarea id="composer-input" class="composer-input" rows="1"
+              <textarea id="composer-input" class="composer-input" rows="1" wrap="off"
                 placeholder="Ask Conductor… reference a document or toggle a skill, paste a product ({\"sku\":…,\"name\":…}) to check compliance, or drop a catalog file  (Ctrl+Enter)"></textarea>
               <div class="composer-send">
                 <button class="c-btn c-send" id="btn-send" title="Send" aria-label="Send">
@@ -286,6 +188,9 @@
               <button class="pane-tab" data-pane="activity" title="Automation activity">
                 <span class="codicon codicon-pulse"></span> Activity
               </button>
+              <button class="pane-tab" data-pane="models" title="AI models (local + providers)">
+                <span class="codicon codicon-package"></span> Models
+              </button>
             </div>
             <button class="tb-btn" id="btn-pane-close" title="Close panel" aria-label="Close panel">
               <svg width="13" height="13" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
@@ -305,6 +210,12 @@
               <button class="btn-secondary btn-sm" id="btn-activity-refresh">Refresh</button>
             </div>
             <div class="activity-list" id="activity-list"></div>
+          </div>
+          <div class="pane-tab-body" id="pane-models">
+            <div class="pane-toolbar">
+              <button class="btn-secondary btn-sm" id="btn-models-refresh">Refresh</button>
+            </div>
+            <div class="models-list" id="models-list"></div>
           </div>
         </aside>
       </div>
@@ -357,6 +268,7 @@
             <button class="settings-nav-item" data-stab="chat"><span class="codicon codicon-comment-discussion"></span> AI Chat</button>
             <button class="settings-nav-item" data-stab="asana"><span class="codicon codicon-organization"></span> Asana Sync</button>
             <button class="settings-nav-item" data-stab="layout"><span class="codicon codicon-layout"></span> Layout</button>
+            <button class="settings-nav-item" data-stab="navigation"><span class="codicon codicon-list-flat"></span> Navigation</button>
             <div class="settings-nav-label">System</div>
             <button class="settings-nav-item" data-stab="advanced"><span class="codicon codicon-json"></span> Advanced</button>
             <button class="settings-nav-item" data-stab="about"><span class="codicon codicon-info"></span> About</button>

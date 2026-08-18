@@ -100,6 +100,7 @@ const state = {
   aiWorkflows: [],
   folderPath: '',
   sidebar: 'full', // full | rail | tucked
+  updateReady: { ready: false, version: null },
 };
 
 /* ------------------------------------------------------------- sidebar nav */
@@ -139,6 +140,30 @@ const VIEW_RENDERERS = {
   variation: () => renderVariation(),
   reports: () => renderReports(),
   guidelines: () => renderGuidelines(),
+  workflows: () => renderWorkflows(),
+  data: () => renderData(),
+  flatfile: () => renderFlatFile(),
+  svl: () => renderSvl(),
+  brandcompare: () => renderBrandCompare(),
+  keepa: () => renderKeepa(),
+  developer: () => renderDeveloper(),
+  content: () => renderModuleStub('content'),
+  case: () => renderModuleStub('case'),
+  fba: () => renderModuleStub('fba'),
+  customerservice: () => renderModuleStub('customerservice'),
+  brands: () => renderModuleStub('brands'),
+  people: () => renderModuleStub('people'),
+  listings: () => renderModuleStub('listings'),
+  walmart: () => renderModuleStub('walmart'),
+  tiktok: () => renderModuleStub('tiktok'),
+  target: () => renderModuleStub('target'),
+  spp: () => renderModuleStub('spp'),
+  coastal: () => renderModuleStub('coastal'),
+  agency: () => renderModuleStub('agency'),
+  agentbuilder: () => renderModuleStub('agentbuilder'),
+  runbooks: () => renderModuleStub('runbooks'),
+  policies: () => renderModuleStub('policies'),
+  features: () => renderFeatureStudio(),
 };
 
 function renderView(name) {
@@ -149,6 +174,7 @@ function renderView(name) {
 
 function showView(name) {
   state.view = name;
+  window.__sidebarActiveView = name;
   // Split-pane workspace (LAW port): when split mode is active, navigation
   // renders into the right pane instead of taking over the window.
   if (window.ConductorSplit && window.ConductorSplit.isActive() && name !== 'bernie' && name !== 'chat') {
@@ -170,7 +196,15 @@ function showView(name) {
 }
 
 function wireShell() {
-  $$('.sidebar-item[data-view]').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
+  // Sidebar nav is rendered dynamically (see sidebar.js) — use event delegation
+  // so re-renders from the Navigation settings tab keep working.
+  $('#sidebar-scroll').addEventListener('click', (e) => {
+    const btn = e.target.closest('.sidebar-item[data-view]');
+    if (!btn) return;
+    const view = btn.dataset.view;
+    if (view.startsWith('url:')) window.open(view.slice(4), '_blank', 'noopener');
+    else showView(view);
+  });
   $('#btn-home').addEventListener('click', () => showView('chat'));
   $('#btn-home-tb').addEventListener('click', () => showView('chat'));
   $('#btn-dash').addEventListener('click', () => showView('dashboard'));
@@ -227,7 +261,9 @@ function wireShell() {
     $$('.pane-tab-body').forEach((x) => x.classList.remove('active'));
     $(`#pane-${b.dataset.pane}`).classList.add('active');
     if (b.dataset.pane === 'activity') loadActivity();
+    if (b.dataset.pane === 'models') loadModels();
   }));
+  $('#btn-models-refresh').addEventListener('click', loadModels);
   $('#btn-pane-close').addEventListener('click', () => {
     const rp = $('#right-pane');
     rp.style.display = rp.style.display === 'none' ? '' : 'none';
@@ -239,10 +275,7 @@ function wireShell() {
   $('#composer-input').addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleComposerSubmit();
   });
-  $('#composer-input').addEventListener('input', () => {
-    $('#composer-input').style.height = 'auto';
-    $('#composer-input').style.height = Math.min($('#composer-input').scrollHeight, 180) + 'px';
-  });
+  // Chatbox is pinned to a single row — no auto-grow (see styles.css).
   $('#btn-attach').addEventListener('click', () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -1362,6 +1395,7 @@ async function renderSettingsTab(tab) {
   const box = $('#settings-content');
   if (tab === 'appearance') { renderAppearanceTab(); return; }
   if (tab === 'layout') { renderLayoutTab(); return; }
+  if (tab === 'navigation') { renderNavigationTab(); return; }
   if (tab === 'advanced') { renderAdvancedTab(); return; }
 
   if (tab === 'chat') {
@@ -1594,20 +1628,64 @@ async function renderSettingsTab(tab) {
   if (tab === 'about') {
     let a = {};
     try { a = await api('/api/about'); } catch { /* */ }
+    let updInfo = null;
+    if (window.desktop && window.desktop.getUpdateInfo) {
+      try { updInfo = await window.desktop.getUpdateInfo(); } catch { /* */ }
+    }
+    const updVer = (updInfo && updInfo.version) || a.version || '—';
+    const canUpdate = !!(updInfo && updInfo.isPackaged);
     box.innerHTML = `
       <div class="settings-pane active">
         <div class="settings-title"><span class="codicon codicon-info"></span> About Conductor</div>
         <div class="about-grid">
           <div class="about-item"><div class="a-label">App</div><div class="a-value">${esc(a.name || 'Conductor')}</div></div>
-          <div class="about-item"><div class="a-label">Version</div><div class="a-value mono">${esc(a.version || '—')}</div></div>
+          <div class="about-item"><div class="a-label">Version</div><div class="a-value mono">${esc(updVer)}</div></div>
           <div class="about-item"><div class="a-label">Python</div><div class="a-value mono">${esc(a.python || '—')}</div></div>
           <div class="about-item"><div class="a-label">Platform</div><div class="a-value">${esc(a.platform || '—')}</div></div>
           <div class="about-item"><div class="a-label">Data directory</div><div class="a-value mono">${esc(a.data_dir || '—')}</div></div>
           <div class="about-item"><div class="a-label">Database</div><div class="a-value mono">${a.db_size ? (a.db_size / 1024 / 1024).toFixed(2) + ' MB' : '—'}</div></div>
           <div class="about-item"><div class="a-label">Uptime</div><div class="a-value mono">${esc(String(a.uptime_s || '—'))}s</div></div>
         </div>
-        <div class="settings-note" style="margin-top:0.75rem">Four pillars: process discovery · automation infrastructure · AI integration · SOPs & governance. Built on the parker desktop skeleton (Electron + FastAPI + SQLite + llama.cpp).</div>
+        <div class="settings-section" style="margin-top:0.75rem">
+          <div class="settings-title"><span class="codicon codicon-cloud-download"></span> Software update</div>
+          <div class="settings-note" id="upd-status">${canUpdate ? 'Updates are checked automatically at launch.' : 'Running the dev build — updates apply only to the installed app.'}</div>
+          <div class="settings-actions">
+            <button class="btn-primary" id="btn-check-updates"><span class="codicon codicon-refresh"></span> Check for updates</button>
+            <button class="btn-primary" id="btn-install-update" ${state.updateReady.ready ? '' : 'hidden'}><span class="codicon codicon-cloud-upload"></span> Restart &amp; install</button>
+          </div>
+        </div>
+        <div class="settings-note" style="margin-top:0.75rem">Four pillars: process discovery · automation infrastructure · AI integration · SOPs &amp; governance. Built on the parker desktop skeleton (Electron + FastAPI + SQLite + llama.cpp).</div>
       </div>`;
+
+    const setStatus = (msg) => { const el = box.querySelector('#upd-status'); if (el) el.textContent = msg; };
+    box.querySelector('#btn-check-updates').addEventListener('click', async () => {
+      if (!window.desktop || !window.desktop.checkForUpdates) {
+        setStatus('Updates are only available in the installed (packaged) app.');
+        return;
+      }
+      const info = await window.desktop.getUpdateInfo().catch(() => null);
+      if (!info || !info.isPackaged) {
+        setStatus(`Running the dev build (v${info ? info.version : '—'}) — updates apply only to the installed app.`);
+        return;
+      }
+      const btn = box.querySelector('#btn-check-updates');
+      btn.disabled = true;
+      setStatus('Checking for updates…');
+      try {
+        const res = await window.desktop.checkForUpdates();
+        if (res.error) setStatus('Check failed: ' + res.error);
+        else if (res.reason === 'updates-disabled') setStatus('Updates are not enabled for this build.');
+        else if (res.available) setStatus(`Update v${res.version} available — downloading…`);
+        else setStatus('You are up to date.');
+      } catch (e) {
+        setStatus('Check failed: ' + (e && e.message ? e.message : e));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    box.querySelector('#btn-install-update').addEventListener('click', () => {
+      if (window.desktop && window.desktop.installUpdate) window.desktop.installUpdate();
+    });
     return;
   }
 }
@@ -1651,30 +1729,37 @@ async function refreshStatusbar() {
 
 /* --------------------------------------------------------------- counts */
 async function refreshCounts() {
+  const set = (key, val) => {
+    const empty = (val === 0 || val === '' || val == null);
+    document.querySelectorAll(`.sidebar-count[data-count="${key}"]`).forEach((el) => {
+      el.textContent = empty ? '' : String(val);
+      el.style.display = empty ? 'none' : '';
+    });
+  };
   try {
-    const [st, h] = await Promise.all([api('/api/automation/stats'), api('/api/health')]);
+    const st = await api('/api/automation/stats');
     state.stats = st;
-    $('#count-processes').textContent = (st.processes || {}).total || 0;
-    $('#count-automations').textContent = (st.automations || {}).total || 0;
-    $('#count-ai').textContent = (st.ai || {}).runs || 0;
-    $('#count-sops').textContent = st.sops || 0;
-    $('#count-events').textContent = st.events || 0;
+    set('processes', (st.processes || {}).total || 0);
+    set('automations', (st.automations || {}).total || 0);
+    set('ai', (st.ai || {}).runs || 0);
+    set('sops', st.sops || 0);
+    set('events', st.events || 0);
   } catch { /* */ }
   try {
     const s = await api('/api/stats');
-    $('#count-checks').textContent = s.checks || 0;
-    $('#count-products').textContent = s.products || 0;
-    $('#count-files').textContent = s.files || 0;
-    $('#count-tasks').textContent = s.tasks_open || 0;
-    $('#count-agents').textContent = s.agents || 0;
+    set('checks', s.checks || 0);
+    set('products', s.products || 0);
+    set('files', s.files || 0);
+    set('tasks', s.tasks_open || 0);
+    set('agents', s.agents || 0);
   } catch { /* */ }
   try {
     const as = await api('/api/asana/status');
-    $('#count-asana').textContent = ((as.counts || {}).open || 0) || '';
+    set('asana', ((as.counts || {}).open || 0));
   } catch { /* */ }
   try {
     const reqs = await api('/api/requests?limit=1');
-    $('#count-requests').textContent = reqs.length ? '•' : '';
+    set('requests', reqs.length ? '•' : '');
   } catch { /* */ }
 }
 
@@ -1716,8 +1801,33 @@ async function initAiComposer() {
   } catch { /* keep bar hidden */ }
 }
 
+/* ------------------------------------------------------- auto-update UI */
+function wireUpdates() {
+  if (!window.desktop || !window.desktop.onUpdateEvent) return; // browser / non-Electron
+  window.desktop.onUpdateEvent((ev) => {
+    if (!ev || !ev.event) return;
+    if (ev.event === 'update-available') {
+      toast(`Conductor ${ev.version} available — downloading…`, 'info');
+    } else if (ev.event === 'update-downloaded') {
+      state.updateReady = { ready: true, version: ev.version };
+      toast(`Conductor ${ev.version} ready — restart to install`, 'ok');
+      const b = $('#btn-install-update');
+      if (b) { b.hidden = false; }
+      const st = $('#upd-status');
+      if (st) st.textContent = `Conductor ${ev.version} downloaded and ready — restart to install.`;
+    } else if (ev.event === 'error') {
+      toast(`Update check failed: ${ev.message}`, 'err');
+      const st = $('#upd-status');
+      if (st) st.textContent = `Update check failed: ${esc(ev.message)}`;
+    }
+  });
+}
+
 async function boot() {
+  window.__sidebarActiveView = state.view;
+  if (window.ConductorSidebar) window.ConductorSidebar.renderSidebar();
   wireShell();
+  wireUpdates();
   setSidebarState(localStorage.getItem('conductor.sidebar') || 'full');
   applyLayout(getLayout());
   const sw = localStorage.getItem('conductor.sidebarWidth');
@@ -1728,10 +1838,6 @@ async function boot() {
   loadFolderTree('');
   initAiComposer();
   initChatContext();
-  try {
-    const agents = await api('/api/agents');
-    $('#count-agents').textContent = agents.length;
-  } catch { /* ignore */ }
   await Promise.all([refreshCounts(), refreshStatusbar()]);
   setInterval(refreshStatusbar, 30000);
   applyGlass(getGlass());
@@ -4641,4 +4747,1266 @@ async function renderBernie() {
 
   bernieRenderCanvas();
   await bernieLoadList();
+}
+
+/* ==========================================================================
+   SIDEBAR REWORK — new module views, Models pane, Navigation customizer
+   ========================================================================== */
+
+const MODULE_STUBS = {
+  content:         { title: 'Content',         icon: 'codicon-notebook',       desc: 'Content operations for listings, copy, and creative.', related: 'catalog', relatedLabel: 'Catalog' },
+  case:            { title: 'Case Management', icon: 'codicon-issue-opened',   desc: 'Customer and support cases across marketplaces.', related: 'tasks', relatedLabel: 'Action Queue' },
+  fba:             { title: 'FBA',             icon: 'codicon-package',        desc: 'Fulfillment by Amazon — shipments, inventory, and prep.', related: 'products', relatedLabel: 'Products' },
+  customerservice: { title: 'Customer Service', icon: 'codicon-person',        desc: 'Inbox, tickets, and customer communications.', related: 'tasks', relatedLabel: 'Action Queue' },
+  brands:          { title: 'Brands',          icon: 'codicon-briefcase',      desc: 'Brand registry, brand health, and portfolio.', related: 'products', relatedLabel: 'Products' },
+  people:          { title: 'People',          icon: 'codicon-organization',   desc: 'Team, roles, and the people behind the operation.', related: 'asana', relatedLabel: 'Asana' },
+  listings:        { title: 'Listings',        icon: 'codicon-list-unordered', desc: 'Live listings and listing quality across channels.', related: 'products', relatedLabel: 'Products' },
+  walmart:         { title: 'Walmart',         icon: 'codicon-globe',          desc: 'Walmart Marketplace operations.', related: 'products', relatedLabel: 'Products' },
+  tiktok:          { title: 'TikTok',          icon: 'codicon-globe',          desc: 'TikTok Shop operations.', related: 'products', relatedLabel: 'Products' },
+  target:          { title: 'Target',          icon: 'codicon-globe',          desc: 'Target marketplace operations.', related: 'products', relatedLabel: 'Products' },
+  spp:             { title: 'SPP',             icon: 'codicon-globe',          desc: 'SPP (Strategic Partner Platform) operations.', related: 'products', relatedLabel: 'Products' },
+  coastal:         { title: 'Coastal',         icon: 'codicon-globe',          desc: 'Coastal channel operations.', related: 'products', relatedLabel: 'Products' },
+  agency:          { title: 'Agency',          icon: 'codicon-globe',          desc: 'Agency client and brand management.', related: 'products', relatedLabel: 'Products' },
+  agentbuilder:    { title: 'Agent Builder',   icon: 'codicon-rocket',         desc: 'Compose custom agents from skills and tools.', related: 'agents', relatedLabel: 'Agents' },
+  runbooks:        { title: 'Runbooks',        icon: 'codicon-notebook',       desc: 'Step-by-step operational runbooks.', related: 'sops', relatedLabel: 'SOPs' },
+  policies:        { title: 'Policies',        icon: 'codicon-library',        desc: 'Company policies and governance documents.', related: 'sops', relatedLabel: 'SOPs' },
+};
+
+function renderModuleStub(view) {
+  const m = MODULE_STUBS[view] || { title: view, icon: 'codicon-circle', desc: 'Module scoped — not yet built.', related: '', relatedLabel: '' };
+  $('#view-root').innerHTML = `
+    <div class="view">
+      <div class="view-header"><div><div class="view-title">${m.title}</div><div class="view-sub">${m.desc}</div></div></div>
+      <div class="empty-state" style="padding-top:3rem">
+        <div class="big"><span class="codicon ${m.icon}"></span></div>
+        <div>This module is scoped but not built yet.</div>
+        <div style="margin-top:0.5rem;color:var(--muted-fg);font-size:0.71875rem">Reorder, hide, or replace it from Settings → Navigation — or ask to build it out.</div>
+        ${m.related ? `<button class="btn-primary" data-rel="${m.related}" style="margin-top:0.75rem">Open ${m.relatedLabel}</button>` : ''}
+      </div>
+    </div>`;
+  const rel = $('#view-root').querySelector('[data-rel]');
+  if (rel) rel.addEventListener('click', () => showView(rel.dataset.rel));
+}
+
+function renderDeveloper() {
+  $('#view-root').innerHTML = `
+    <div class="view">
+      <div class="view-header"><div><div class="view-title">Developer</div><div class="view-sub">REST API, webhooks, and the integration surface for Conductor.</div></div></div>
+      <div class="api-endpoints">
+        ${[
+          ['GET', '/api/health'], ['GET', '/api/stats'], ['GET', '/api/products'], ['POST', '/api/products'],
+          ['POST', '/api/ingest/upload'], ['POST', '/webhooks/ingest'], ['POST', '/webhooks/automation/{source}'],
+          ['GET', '/api/data/table'], ['POST', '/api/data/pivot'], ['POST', '/api/svl/compare'], ['GET', '/api/flatfiles'],
+        ].map(([m, p]) => `<div class="api-row"><span class="method ${m.toLowerCase()}">${m}</span><span>${p}</span></div>`).join('')}
+      </div>
+      <div class="settings-note" style="margin-top:0.75rem">POST JSON to <code>/webhooks/automation/&lt;source&gt;</code> to trigger automations. Push external catalog data to <code>/webhooks/ingest</code>. Full OpenAPI docs at <code>/docs</code>.</div>
+    </div>`;
+}
+
+async function renderWorkflows() {
+  const root = $('#view-root');
+  root.innerHTML = `<div class="view"><div class="view-header"><div><div class="view-title">Workflows</div><div class="view-sub">Your automations as a runnable workflow list — build and edit them under Automation.</div></div></div><div id="wf-body" class="empty-state">Loading…</div></div>`;
+  try {
+    const autos = await api('/api/automations');
+    const rows = (autos || []).map((a) => `
+      <tr>
+        <td><b>${esc(a.name)}</b>${a.description ? `<div style="color:var(--muted-fg)">${esc(a.description)}</div>` : ''}</td>
+        <td class="mono">${esc(a.trigger_source || '')} → ${esc(a.trigger_event || '')}</td>
+        <td>${a.enabled ? '<span class="pill-int pill-int-configured">on</span>' : '<span class="pill-int pill-int-missing">off</span>'}</td>
+        <td>${a.last_status ? esc(a.last_status) : '—'}</td>
+      </tr>`).join('');
+    $('#wf-body').innerHTML = rows
+      ? `<table class="data-table"><thead><tr><th>Workflow</th><th>Trigger</th><th>State</th><th>Last run</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty-state"><div class="big"><span class="codicon codicon-git-merge"></span></div><div>No workflows yet. Create one in Automation → Automations.</div></div>`;
+  } catch (e) { $('#wf-body').innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+}
+
+/* ----------------------------------------------------------------- Models
+   Right-pane "Models" tab — local GGUF discovery + provider models. */
+async function loadModels() {
+  const list = $('#models-list');
+  if (!list) return;
+  list.innerHTML = '<div class="folder-loading">Loading models…</div>';
+  try {
+    const [disc, provs, cfg] = await Promise.all([
+      api('/api/llama/discover'), api('/api/chat/providers'), api('/api/chat/config'),
+    ]);
+    const models = disc.models || [];
+    const srcLabel = (s) => {
+      if (s.includes('conductor')) return 'conductor models/';
+      if (s.includes('.ollama')) return 'Ollama';
+      if (s.includes('lm-studio')) return 'LM Studio';
+      if (s.includes('.lmstudio')) return 'LM Studio (legacy)';
+      if (s.includes('jan')) return 'Jan / Atomic Chat';
+      if (s.includes('Conductor')) return 'AppData models';
+      return s.split(/[\\/]/).slice(-2).join('/');
+    };
+    const ggufRows = models.map((m) => `
+      <div class="model-row">
+        <span class="codicon codicon-package"></span>
+        <div class="model-meta">
+          <div class="model-name">${esc(m.name)}</div>
+          <div class="model-sub">${(m.sizeBytes / 1073741824).toFixed(1)} GB · ${esc(srcLabel(m.sourceDir))} · ${esc(m.kind)}</div>
+        </div>
+      </div>`).join('');
+    const providerRows = (provs.providers || []).map((p) => `
+      <div class="model-row">
+        <span class="codicon codicon-server-process"></span>
+        <div class="model-meta">
+          <div class="model-name">${esc(p.label)}${p.configured ? '' : ' <span style="color:var(--muted-fg)">(no key)</span>'}</div>
+          <div class="model-sub">${esc(p.defaultModelId || '')}</div>
+        </div>
+        ${(cfg.provider === p.id) ? '<span class="pill-int pill-int-configured">active</span>' : ''}
+      </div>`).join('');
+    list.innerHTML = `
+      <div class="pane-section-label">Active</div>
+      <div class="model-row">
+        <span class="codicon codicon-zap"></span>
+        <div class="model-meta">
+          <div class="model-name">${esc(cfg.provider || '—')}</div>
+          <div class="model-sub">${esc(cfg.model || cfg.llama_model || '—')}</div>
+        </div>
+      </div>
+      <div class="pane-section-label">Providers</div>
+      ${providerRows || '<div class="folder-hint">No providers.</div>'}
+      <div class="pane-section-label">Local GGUF (${models.length})</div>
+      ${ggufRows || '<div class="folder-hint">No GGUF models found. Drop one into models/.</div>'}`;
+  } catch (e) {
+    list.innerHTML = `<div class="folder-hint">Could not load models: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ------------------------------------------------------------------ Navigation
+   Settings → Navigation: presets + full sidebar customization. */
+function renderNavigationTab() {
+  const box = $('#settings-content');
+  const Sidebar = window.ConductorSidebar;
+  const cfg = Sidebar.loadSidebarConfig();
+
+  const presetOpts = Sidebar.SIDEBAR_PRESET_IDS.map((id) =>
+    `<option value="${id}" ${cfg.preset === id ? 'selected' : ''}>${Sidebar.SIDEBAR_PRESETS[id].label}</option>`).join('')
+    + `<option value="custom" ${!Sidebar.SIDEBAR_PRESET_IDS.includes(cfg.preset) ? 'selected' : ''}>Custom</option>`;
+
+  const sections = cfg.sections.map((sec, si) => {
+    const itemRows = (sec.items || []).map((id, ii) => {
+      const item = Sidebar.resolveNavItem(id, cfg);
+      const label = item ? item.label : `(${id})`;
+      const icon = (item && item.icon) ? item.icon.replace(/[^a-zA-Z0-9_-]/g, '') : 'codicon-circle';
+      return `<div class="nav-item-row">
+        <span class="codicon ${icon}"></span>
+        <span class="nav-item-label">${esc(label)}</span>
+        <button class="nav-mini" data-act="item-up" data-si="${si}" data-ii="${ii}" title="Move up">↑</button>
+        <button class="nav-mini" data-act="item-down" data-si="${si}" data-ii="${ii}" title="Move down">↓</button>
+        <button class="nav-mini nav-mini-danger" data-act="item-del" data-si="${si}" data-ii="${ii}" title="Remove from sidebar">×</button>
+      </div>`;
+    }).join('');
+    return `<div class="nav-section-card">
+      <div class="nav-section-head">
+        <input class="nav-section-label" data-si="${si}" value="${esc(sec.label || '')}" placeholder="Section name" />
+        <button class="nav-mini" data-act="sec-up" data-si="${si}" title="Move section up">↑</button>
+        <button class="nav-mini" data-act="sec-down" data-si="${si}" title="Move section down">↓</button>
+        <button class="nav-mini nav-mini-danger" data-act="sec-del" data-si="${si}" title="Delete section">×</button>
+      </div>
+      <div class="nav-section-items">${itemRows || '<div class="nav-empty">No items — add one below.</div>'}</div>
+    </div>`;
+  }).join('');
+
+  const used = new Set();
+  cfg.sections.forEach((s) => (s.items || []).forEach((id) => used.add(id)));
+  const available = Sidebar.sidebarAllItemIds().filter((id) => !used.has(id));
+  const availOpts = available.map((id) => `<option value="${id}">${esc(Sidebar.NAV_ITEMS[id].label)}</option>`).join('');
+
+  box.innerHTML = `
+    <div class="settings-pane active">
+      <div class="settings-section">
+        <div class="settings-title"><span class="codicon codicon-list-flat"></span> Sidebar Navigation</div>
+        <div class="settings-note">Reorder, remove, rename, and add sidebar items — changes apply live. Pick a preset to restructure, or tweak anything by hand.</div>
+        <div class="field-row">
+          <label class="field"><span>Preset</span><select id="nav-preset">${presetOpts}</select></label>
+          <label class="field"><span>&nbsp;</span><button class="btn-primary" id="nav-apply-preset" style="min-height:var(--control-h)">Apply preset</button></label>
+        </div>
+        <div class="nav-sections">${sections || '<div class="nav-empty">Empty — add a section below.</div>'}</div>
+        <div class="field-row" style="margin-top:0.75rem">
+          <label class="field"><span>Add built-in item</span><select id="nav-add-select">${availOpts || '<option value="">— all added —</option>'}</select></label>
+          <label class="field"><span>&nbsp;</span><button class="btn-secondary" id="nav-add-item" style="min-height:var(--control-h)">＋ Add item</button></label>
+        </div>
+        <div class="field-row">
+          <label class="field"><span>Custom link label</span><input id="nav-cust-label" placeholder="e.g. Help Center" /></label>
+          <label class="field"><span>URL</span><input id="nav-cust-url" placeholder="https://…" /></label>
+        </div>
+        <div class="settings-actions">
+          <button class="btn-secondary" id="nav-add-custom">＋ Add custom link</button>
+          <button class="btn-secondary" id="nav-add-section">＋ Add section</button>
+          <button class="btn-secondary" id="nav-reset">Reset to default</button>
+        </div>
+        <div class="settings-note" id="nav-avail" style="margin-top:0.5rem">${available.length} built-in item${available.length === 1 ? '' : 's'} not currently shown.</div>
+      </div>
+    </div>`;
+
+  const commit = () => { Sidebar.saveSidebarConfig(cfg); Sidebar.renderSidebar(); renderNavigationTab(); };
+
+  box.querySelector('#nav-preset').addEventListener('change', (e) => {
+    if (e.target.value === 'custom') return;
+    cfg.preset = e.target.value;
+    cfg.sections = JSON.parse(JSON.stringify(Sidebar.SIDEBAR_PRESETS[e.target.value].sections));
+    commit();
+  });
+  box.querySelector('#nav-apply-preset').addEventListener('click', () => {
+    const v = box.querySelector('#nav-preset').value;
+    if (v === 'custom') return toast('Pick a preset first', 'warn');
+    cfg.preset = v;
+    cfg.sections = JSON.parse(JSON.stringify(Sidebar.SIDEBAR_PRESETS[v].sections));
+    commit();
+  });
+
+  box.querySelectorAll('.nav-section-label').forEach((inp) => inp.addEventListener('change', () => {
+    const si = Number(inp.dataset.si);
+    if (cfg.sections[si]) cfg.sections[si].label = inp.value.trim() || 'Section';
+    Sidebar.saveSidebarConfig(cfg); Sidebar.renderSidebar();
+  }));
+
+  box.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
+    const si = Number(b.dataset.si), ii = Number(b.dataset.ii), act = b.dataset.act;
+    const sec = cfg.sections[si];
+    if (act === 'sec-up' && si > 0) { [cfg.sections[si - 1], cfg.sections[si]] = [sec, cfg.sections[si - 1]]; }
+    else if (act === 'sec-down' && si < cfg.sections.length - 1) { [cfg.sections[si + 1], cfg.sections[si]] = [cfg.sections[si], cfg.sections[si + 1]]; }
+    else if (act === 'sec-del') { cfg.sections.splice(si, 1); }
+    else if (sec && act === 'item-up' && ii > 0) { [sec.items[ii - 1], sec.items[ii]] = [sec.items[ii], sec.items[ii - 1]]; }
+    else if (sec && act === 'item-down' && ii < sec.items.length - 1) { [sec.items[ii + 1], sec.items[ii]] = [sec.items[ii], sec.items[ii + 1]]; }
+    else if (sec && act === 'item-del') { sec.items.splice(ii, 1); }
+    commit();
+  }));
+
+  box.querySelector('#nav-add-item').addEventListener('click', () => {
+    const sel = box.querySelector('#nav-add-select');
+    const id = sel && sel.value;
+    if (!id) return toast('No built-in items left to add', 'warn');
+    let last = cfg.sections[cfg.sections.length - 1];
+    if (!last) { last = { label: 'New Section', items: [] }; cfg.sections.push(last); }
+    last.items.push(id);
+    commit();
+  });
+  box.querySelector('#nav-add-section').addEventListener('click', () => {
+    cfg.sections.push({ label: 'New Section', items: [] });
+    commit();
+  });
+  box.querySelector('#nav-add-custom').addEventListener('click', () => {
+    const label = box.querySelector('#nav-cust-label').value.trim();
+    const url = box.querySelector('#nav-cust-url').value.trim();
+    if (!label || !url) return toast('Enter a label and URL', 'warn');
+    const id = 'custom_' + Date.now().toString(36);
+    cfg.custom = cfg.custom || {};
+    cfg.custom[id] = { label, icon: 'codicon-globe', url };
+    let last = cfg.sections[cfg.sections.length - 1];
+    if (!last) { last = { label: 'Links', items: [] }; cfg.sections.push(last); }
+    last.items.push(id);
+    commit();
+  });
+  box.querySelector('#nav-reset').addEventListener('click', () => {
+    Sidebar.applySidebarPreset(Sidebar.DEFAULT_PRESET);
+    renderNavigationTab();
+  });
+}
+
+/* ==========================================================================
+   FLAT FILE CREATION — Amazon flat-file templates (per product type)
+   ========================================================================== */
+async function renderFlatFile() {
+  const root = $('#view-root');
+  root.innerHTML = `
+    <div class="view">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Flat File Creation</div>
+          <div class="view-sub">Amazon flat-file templates per product type — store templates, edit columns, generate CSVs.</div>
+        </div>
+        <div class="view-actions"><button class="btn-primary" id="ff-new"><span class="codicon codicon-add"></span> New template</button></div>
+      </div>
+      <div id="ff-list" class="empty-state">Loading…</div>
+    </div>`;
+  $('#ff-new').addEventListener('click', () => openFlatFileEditor(null));
+  await refreshFlatFileList();
+}
+
+async function refreshFlatFileList() {
+  const list = $('#ff-list');
+  if (!list) return;
+  try {
+    const tmpls = await api('/api/flatfiles');
+    if (!tmpls.length) {
+      list.innerHTML = `<div class="empty-state"><div class="big"><span class="codicon codicon-table"></span></div><div>No flat-file templates yet.</div><button class="btn-primary" id="ff-new2" style="margin-top:0.75rem">Create one</button></div>`;
+      const b = $('#ff-new2'); if (b) b.addEventListener('click', () => openFlatFileEditor(null));
+      return;
+    }
+    list.innerHTML = `<table class="data-table"><thead><tr><th>Template</th><th>Product type</th><th>Columns</th><th>Updated</th><th></th></tr></thead><tbody>${tmpls.map((t) => `
+      <tr>
+        <td>${esc(t.name)}</td>
+        <td>${esc(t.product_type)}</td>
+        <td>${t.column_count}</td>
+        <td class="mono">${fmtAgo(t.updated_at) || '—'}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="btn-mini" data-ff-edit="${t.id}">Edit</button>
+          <button class="btn-mini" data-ff-gen="${t.id}">Generate</button>
+          <button class="btn-mini btn-mini-danger" data-ff-del="${t.id}">Delete</button>
+        </td>
+      </tr>`).join('')}</tbody></table>`;
+    list.querySelectorAll('[data-ff-edit]').forEach((b) => b.addEventListener('click', () => openFlatFileEditor(Number(b.dataset.ffEdit))));
+    list.querySelectorAll('[data-ff-gen]').forEach((b) => b.addEventListener('click', () => openFlatFileGenerate(Number(b.dataset.ffGen))));
+    list.querySelectorAll('[data-ff-del]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Delete this template?')) return;
+      await api(`/api/flatfiles/${b.dataset.ffDel}`, { method: 'DELETE' });
+      toast('Template deleted', 'ok'); refreshFlatFileList();
+    }));
+  } catch (e) { list.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+}
+
+async function openFlatFileEditor(id) {
+  let tpl = { name: '', product_type: 'General', columns: [], header_note: '' };
+  let presets = { product_types: [], templates: {} };
+  if (id) tpl = await api(`/api/flatfiles/${id}`);
+  try { presets = await api('/api/flatfiles/presets'); } catch { /* */ }
+  const ptOptions = (presets.product_types.length ? presets.product_types : [tpl.product_type])
+    .map((p) => `<option value="${esc(p)}" ${tpl.product_type === p ? 'selected' : ''}>${esc(p)}</option>`).join('');
+
+  const renderCols = () => {
+    const rows = (tpl.columns || []).map((c, i) => `
+      <div class="ff-col-row" data-i="${i}">
+        <input class="ff-key" value="${esc(c.key)}" placeholder="key" title="Field key" />
+        <input class="ff-label" value="${esc(c.label)}" placeholder="label" title="Human label" />
+        <label class="ff-req" title="Required column"><input type="checkbox" class="ff-required" ${c.required ? 'checked' : ''} /> req</label>
+        <button class="nav-mini nav-mini-danger" data-ff-col-del="${i}" title="Remove column">×</button>
+      </div>`).join('');
+    $('#ff-cols').innerHTML = rows || '<div class="nav-empty">No columns — add below.</div>';
+    $('#ff-cols').querySelectorAll('[data-ff-col-del]').forEach((b) => b.addEventListener('click', () => {
+      tpl.columns.splice(Number(b.dataset.ffColDel), 1); renderCols();
+    }));
+  };
+
+  openModal(id ? 'Edit Flat-File Template' : 'New Flat-File Template', `
+    <label class="field"><span>Template name</span><input id="ff-name" value="${esc(tpl.name)}" placeholder="e.g. Beauty — US Flat File" /></label>
+    <div class="field-row">
+      <label class="field"><span>Product type</span><select id="ff-pt">${ptOptions}</select></label>
+      <label class="field"><span>&nbsp;</span><button class="btn-secondary" id="ff-load-preset" style="min-height:var(--control-h)">Load preset columns</button></label>
+    </div>
+    <label class="field"><span>Header note (optional)</span><input id="ff-note" value="${esc(tpl.header_note)}" /></label>
+    <div class="field"><span>Columns</span>
+      <div id="ff-cols" class="ff-cols"></div>
+      <button class="btn-secondary" id="ff-add-col" style="margin-top:0.375rem">＋ Add column</button>
+    </div>`,
+    `<button class="btn-secondary" id="ff-cancel">Cancel</button>
+     <button class="btn-primary" id="ff-save">Save template</button>`);
+
+  renderCols();
+  $('#ff-load-preset').addEventListener('click', () => {
+    const pt = $('#ff-pt').value;
+    const cols = (presets.templates || {})[pt];
+    if (cols) { tpl.columns = JSON.parse(JSON.stringify(cols)); renderCols(); toast(`Loaded ${cols.length} columns for ${pt}`, 'ok'); }
+    else toast('No preset columns for that type', 'warn');
+  });
+  $('#ff-add-col').addEventListener('click', () => {
+    tpl.columns.push({ key: '', label: '', required: false, values: [], example: '' }); renderCols();
+  });
+  $('#ff-cancel').addEventListener('click', closeModal);
+  $('#ff-save').addEventListener('click', async () => {
+    const cols = Array.from(document.querySelectorAll('#ff-cols .ff-col-row')).map((row) => ({
+      key: row.querySelector('.ff-key').value.trim(),
+      label: row.querySelector('.ff-label').value.trim(),
+      required: row.querySelector('.ff-required').checked,
+      values: [], example: '',
+    })).filter((c) => c.key);
+    const body = { name: $('#ff-name').value.trim(), product_type: $('#ff-pt').value, header_note: $('#ff-note').value.trim(), columns: cols };
+    if (!body.name) return toast('Name is required', 'err');
+    try {
+      if (id) await api(`/api/flatfiles/${id}`, { method: 'PUT', body });
+      else await api('/api/flatfiles', { method: 'POST', body });
+      closeModal(); toast('Template saved', 'ok'); refreshFlatFileList();
+    } catch (e) { toast(`Save failed: ${e.message}`, 'err'); }
+  });
+}
+
+async function openFlatFileGenerate(id) {
+  const tpl = await api(`/api/flatfiles/${id}`);
+  const cols = tpl.columns || [];
+  const rowHTML = () => `<div class="ff-gen-row">${cols.map((c) => `
+    <label class="field"><span>${esc(c.label)}${c.required ? ' *' : ''}</span>
+      <input class="ff-gen-val" data-key="${esc(c.key)}" placeholder="${esc(c.example || '')}" />
+    </label>`).join('')}</div>`;
+  openModal(`Generate — ${esc(tpl.name)}`, `
+    <div class="settings-note">Fill rows and generate a flat-file CSV (first two lines are the label/field headers).</div>
+    <div id="ff-gen-rows">${rowHTML()}</div>
+    <button class="btn-secondary" id="ff-gen-addrow" style="margin-top:0.375rem">＋ Add row</button>`,
+    `<button class="btn-secondary" id="ff-gen-cancel">Cancel</button>
+     <button class="btn-primary" id="ff-gen-do">Generate CSV</button>`);
+  $('#ff-gen-addrow').addEventListener('click', () => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = rowHTML();
+    $('#ff-gen-rows').appendChild(wrap.firstElementChild);
+  });
+  $('#ff-gen-cancel').addEventListener('click', closeModal);
+  $('#ff-gen-do').addEventListener('click', async () => {
+    const rows = Array.from(document.querySelectorAll('#ff-gen-rows .ff-gen-row')).map((r) => {
+      const row = {};
+      r.querySelectorAll('.ff-gen-val').forEach((inp) => { row[inp.dataset.key] = inp.value; });
+      return row;
+    });
+    try {
+      const res = await api(`/api/flatfiles/${id}/generate`, { method: 'POST', body: { rows } });
+      const blob = new Blob([res.csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = res.filename; a.click();
+      URL.revokeObjectURL(a.href);
+      closeModal(); toast(`Generated ${res.filename}`, 'ok');
+    } catch (e) { toast(`Generate failed: ${e.message}`, 'err'); }
+  });
+}
+
+/* ==========================================================================
+   SvL COMPARISON — Levenshtein fuzzy match vs live catalog
+   ========================================================================== */
+async function renderSvl() {
+  const root = $('#view-root');
+  root.innerHTML = `
+    <div class="view">
+      <div class="view-header"><div>
+        <div class="view-title">SvL Comparison</div>
+        <div class="view-sub">Suggested vs Live — fuzzy-match proposed content against your live catalog using Levenshtein distance.</div>
+      </div></div>
+      <div class="svl-form">
+        <label class="field"><span>Suggested content</span>
+          <textarea id="svl-text" rows="2" placeholder="e.g. a proposed title, brand, or description…"></textarea></label>
+        <div class="field-row">
+          <label class="field"><span>Compare against</span><select id="svl-field">
+            <option value="name">Product name / title</option>
+            <option value="brand">Brand</option>
+            <option value="category">Category</option>
+            <option value="sku">SKU</option>
+            <option value="market">Market</option>
+          </select></label>
+          <label class="field"><span>Min similarity</span><input id="svl-threshold" type="number" min="0" max="1" step="0.05" value="0" /></label>
+        </div>
+        <div class="settings-actions"><button class="btn-primary" id="svl-run"><span class="codicon codicon-arrow-swap"></span> Compare</button></div>
+      </div>
+      <div id="svl-results"></div>
+    </div>`;
+  $('#svl-run').addEventListener('click', runSvl);
+  $('#svl-text').addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runSvl(); });
+}
+
+async function runSvl() {
+  const suggested = $('#svl-text').value.trim();
+  const field = $('#svl-field').value;
+  const threshold = Number($('#svl-threshold').value || 0);
+  if (!suggested) return toast('Enter suggested content first', 'warn');
+  const res = $('#svl-results');
+  res.innerHTML = '<div class="empty-state">Comparing…</div>';
+  try {
+    const data = await api('/api/svl/compare', { method: 'POST', body: { suggested, field, threshold } });
+    const best = data.best;
+    const badge = (sim) => sim >= 0.9 ? 'pill-int pill-int-configured' : sim >= 0.6 ? 'pill-int' : 'pill-int pill-int-missing';
+    res.innerHTML = `
+      ${best ? `<div class="settings-note" style="margin-bottom:0.5rem">Best match: <b>${esc(best.field_value)}</b> — ${(best.similarity * 100).toFixed(1)}% similar (distance ${best.distance})</div>` : ''}
+      <table class="data-table"><thead><tr><th>Match</th><th>SKU</th><th>Value</th><th>Category</th><th>Distance</th><th>Similarity</th></tr></thead>
+      <tbody>${data.matches.map((m) => `
+        <tr>
+          <td>${esc(m.name)}</td>
+          <td class="mono">${esc(m.sku)}</td>
+          <td>${esc(m.field_value)}</td>
+          <td>${esc(m.category)}</td>
+          <td class="mono">${m.distance}</td>
+          <td><span class="${badge(m.similarity)}">${(m.similarity * 100).toFixed(1)}%</span></td>
+        </tr>`).join('') || '<tr><td colspan="6" class="empty-state">No matches above threshold.</td></tr>'}</tbody></table>`;
+  } catch (e) { res.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+}
+
+/* ==========================================================================
+   BRAND & CATEGORY COMPARISON — "brand X vs top competitors" across the
+   T3 value attributes (Included Components, Target Audience, Recommended
+   Uses, Specific Uses, Product Benefit, Active Ingredients, Special Ingredients)
+   ========================================================================== */
+const brandCompareState = { brand: '', category: '', market: '', limit: 6, meta: null, result: null };
+
+async function renderBrandCompare() {
+  const root = $('#view-root');
+  root.innerHTML = `
+    <div class="view">
+      <div class="view-header"><div>
+        <div class="view-title">Brand Compare</div>
+        <div class="view-sub">I have brand X — see what the top competitors are doing. Compares the T3 value attributes across brands in a category.</div>
+      </div></div>
+      <div class="svl-form">
+        <div class="field-row">
+          <label class="field"><span>Your brand</span>
+            <input id="bc-brand" list="bc-brands" placeholder="e.g. Acme…" value="${esc(brandCompareState.brand)}" />
+            <datalist id="bc-brands"></datalist></label>
+          <label class="field"><span>Category</span><select id="bc-category"></select></label>
+          <label class="field"><span>Market</span><select id="bc-market"></select></label>
+          <label class="field"><span>Top competitors</span><input id="bc-limit" type="number" min="1" max="12" value="${brandCompareState.limit}" /></label>
+        </div>
+        <div class="settings-actions">
+          <button class="btn-primary" id="bc-run"><span class="codicon codicon-telescope"></span> Compare</button>
+          <button class="btn-secondary" id="bc-brief"><span class="codicon codicon-sparkle"></span> AI competitive brief</button>
+        </div>
+      </div>
+      <div id="bc-results"></div>
+    </div>`;
+  $('#bc-run').addEventListener('click', runBrandCompare);
+  $('#bc-brand').addEventListener('keydown', (e) => { if (e.key === 'Enter') runBrandCompare(); });
+  $('#bc-brief').addEventListener('click', runBrandBrief);
+
+  try {
+    const meta = await api('/api/brandcompare/meta');
+    brandCompareState.meta = meta;
+    $('#bc-brands').innerHTML = (meta.brands || []).map((b) => `<option value="${esc(b)}">`).join('');
+    $('#bc-category').innerHTML = '<option value="">All categories</option>' +
+      (meta.categories || []).map((c) => `<option value="${esc(c)}">`).join('');
+    $('#bc-market').innerHTML = '<option value="">All markets</option>' +
+      (meta.markets || []).map((m) => `<option value="${esc(m)}">`).join('');
+    if ((meta.brands || []).length === 0) {
+      $('#bc-results').innerHTML = `<div class="empty-state">No brands found in the catalog yet — import products (Catalog Ingest) to compare, or use the AI brief.</div>`;
+    }
+  } catch (e) {
+    $('#bc-results').innerHTML = `<div class="empty-state">Could not load catalog meta: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ------------------------------------------------------------- keepa */
+const keepaState = { asins: '', domain: 1, meta: null };
+
+function keepaPrice(v) {
+  if (v == null) return '—';
+  return '$' + Number(v).toFixed(2);
+}
+function keepaMs(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return '—';
+  return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function keepaCard(p) {
+  const c = p.current || {};
+  const img = (p.images && p.images[0])
+    ? `<img class="keepa-img" src="${esc(p.images[0])}" loading="lazy" referrerpolicy="no-referrer" alt="">`
+    : `<div class="keepa-img keepa-img-empty"><span class="codicon codicon-package"></span></div>`;
+  const brandLine = [p.brand, p.manufacturer !== p.brand ? p.manufacturer : ''].filter(Boolean).join(' · ');
+  const features = (p.features || []).slice(0, 3).map((f) => `<li>${esc(f)}</li>`).join('');
+  return `<div class="keepa-card">
+    ${img}
+    <div class="keepa-body">
+      <div class="keepa-title" title="${esc(p.title || '')}">${esc(p.title || p.asin)}</div>
+      <div class="keepa-meta">${esc(brandLine)}</div>
+      <div class="keepa-asin">${esc(p.asin)}${p.domain ? ' · ' + esc(p.domain) : ''}${p.productGroup ? ' · ' + esc(p.productGroup) : ''}</div>
+      <div class="keepa-stats">
+        <div class="keepa-stat"><span>Price</span><b>${keepaPrice(c.price)}</b></div>
+        <div class="keepa-stat"><span>Rank</span><b>${c.salesRank ? '#' + fmtNum(c.salesRank) : '—'}</b></div>
+        <div class="keepa-stat"><span>Rating</span><b>${c.rating != null ? `★ ${c.rating} (${fmtNum(c.reviewsCount || 0)})` : '—'}</b></div>
+        <div class="keepa-stat"><span>Updated</span><b>${keepaMs(p.lastUpdate)}</b></div>
+      </div>
+      ${features ? `<ul class="keepa-features">${features}</ul>` : ''}
+    </div>
+    <div class="keepa-foot">
+      <span class="muted">${fmtNum(p.csvPoints || 0)} data points${c.isPrime ? ' · Prime' : ''}${c.isAdultProduct ? ' · Adult' : ''}</span>
+      <button class="btn-primary btn-sm keepa-import" data-asin="${esc(p.asin)}"><span class="codicon codicon-cloud-upload"></span> Import to catalog</button>
+    </div>
+  </div>`;
+}
+
+async function renderKeepa() {
+  const root = $('#view-root');
+  root.innerHTML = `<div class="view">
+    <div class="view-header"><div>
+      <div class="view-title">Keepa</div>
+      <div class="view-sub">Live Amazon product data by ASIN — price, sales rank, rating, images, brand. Pulled from the Keepa product API and cached locally so repeat lookups don't burn tokens.</div>
+    </div></div>
+
+    <div class="keepa-panel">
+      <div class="keepa-config">
+        <div class="keepa-config-head"><span class="codicon codicon-key"></span> API key <span class="pill-int pill-int-missing" id="keepa-key-state" style="margin-left:0.4rem">…</span></div>
+        <div class="field-row">
+          <label class="field"><span>Keepa API key</span><input id="keepa-key" type="password" placeholder="Paste your Keepa API key" autocomplete="off" /></label>
+          <label class="field"><span>Domain</span><select id="keepa-domain"></select></label>
+        </div>
+        <div class="settings-actions">
+          <button class="btn-secondary" id="keepa-save-key"><span class="codicon codicon-save"></span> Save key</button>
+        </div>
+      </div>
+
+      <div class="keepa-lookup">
+        <div class="keepa-config-head"><span class="codicon codicon-search"></span> Look up live product data</div>
+        <div class="field-row">
+          <label class="field" style="flex:1"><span>ASINs — comma- or space-separated, up to 100</span>
+            <input id="keepa-asins" placeholder="B08N5WRWNW, B09G9FPHY6" value="${esc(keepaState.asins)}" /></label>
+        </div>
+        <div class="settings-actions">
+          <button class="btn-primary" id="keepa-lookup"><span class="codicon codicon-search"></span> Look up</button>
+          <button class="btn-secondary" id="keepa-lookup-fresh" title="Ignore cache and refetch live from Keepa"><span class="codicon codicon-refresh"></span> Refresh</button>
+          <span class="muted" id="keepa-tokens" style="margin-left:0.25rem"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="keepa-results"></div>
+    <div class="view-title" style="margin-top:1.5rem">Cached</div>
+    <div class="view-sub" style="margin-bottom:0.5rem">Products already pulled and stored locally — import them any time without spending a token.</div>
+    <div id="keepa-cached" class="keepa-grid"></div>
+  </div>`;
+
+  try {
+    const st = await api('/api/keepa/status');
+    keepaState.domain = st.domain || 1;
+    $('#keepa-domain').innerHTML = (st.domains || []).map((d) => `<option value="${d.id}" ${d.id === st.domain ? 'selected' : ''}>${esc(d.code)} (${d.id})</option>`).join('');
+    const keyState = $('#keepa-key-state');
+    keyState.textContent = st.has_key ? `configured ${st.key_masked}` : 'not configured';
+    keyState.className = 'pill-int ' + (st.has_key ? 'pill-int-configured' : 'pill-int-missing');
+    if (!st.has_key) $('#keepa-key').placeholder = 'No key yet — paste your Keepa API key';
+  } catch (e) { toast(e.message, 'err'); }
+
+  $('#keepa-save-key').addEventListener('click', async () => {
+    const key = $('#keepa-key').value.trim();
+    const domain = Number($('#keepa-domain').value);
+    if (!key) return toast('Enter a Keepa API key', 'warn');
+    try {
+      await api('/api/keepa/config', { method: 'POST', body: { api_key: key, domain } });
+      toast('Keepa key saved', 'ok');
+      await renderKeepa();
+    } catch (e) { toast(e.message, 'err'); }
+  });
+
+  const doLookup = async (refresh) => {
+    keepaState.asins = $('#keepa-asins').value.trim();
+    const domain = Number($('#keepa-domain').value);
+    if (!keepaState.asins) return toast('Enter at least one ASIN', 'warn');
+    const res = $('#keepa-results');
+    res.innerHTML = '<div class="empty-state">Looking up live data on Keepa…</div>';
+    try {
+      const data = await api('/api/keepa/lookup', { method: 'POST', body: { asins: keepaState.asins, domain, refresh } });
+      keepaState.meta = data.meta || null;
+      const mt = data.meta || {};
+      $('#keepa-tokens').textContent = mt.tokensLeft != null
+        ? `tokens left: ${fmtNum(mt.tokensLeft)}${mt.refillRate ? ` · refill ${mt.refillRate}/min` : ''}${data.fromCache ? ` · ${data.fromCache} from cache` : ''}`
+        : (data.fromCache ? `${data.fromCache} from cache` : '');
+      if (!data.products.length) {
+        res.innerHTML = `<div class="empty-state">No results${data.notFound && data.notFound.length ? ' — not found: ' + esc(data.notFound.join(', ')) : ''}. Check the ASIN, domain and key.</div>`;
+        return;
+      }
+      res.innerHTML = `<div class="keepa-grid">${data.products.map((p) => keepaCard(p)).join('')}</div>`;
+      wireKeepaImport(res);
+      if (data.notFound && data.notFound.length) {
+        res.insertAdjacentHTML('beforeend', `<div class="settings-note" style="margin-top:0.5rem">Not found on Keepa: ${esc(data.notFound.join(', '))}</div>`);
+      }
+    } catch (e) {
+      res.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`;
+    }
+  };
+  $('#keepa-lookup').addEventListener('click', () => doLookup(false));
+  $('#keepa-lookup-fresh').addEventListener('click', () => doLookup(true));
+  $('#keepa-asins').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLookup(false); });
+
+  try {
+    const cached = await api('/api/keepa/products?limit=60');
+    const grid = $('#keepa-cached');
+    grid.innerHTML = cached.products.length
+      ? cached.products.map((p) => keepaCard(p)).join('')
+      : '<div class="empty-state">Nothing cached yet — run a lookup above.</div>';
+    wireKeepaImport(grid);
+  } catch (e) {
+    $('#keepa-cached').innerHTML = `<div class="empty-state">Could not load cached products: ${esc(e.message)}</div>`;
+  }
+}
+
+function wireKeepaImport(container) {
+  container.querySelectorAll('.keepa-import').forEach((b) => b.addEventListener('click', async () => {
+    const asin = b.dataset.asin;
+    const domain = Number(($('#keepa-domain') && $('#keepa-domain').value) || keepaState.domain);
+    b.disabled = true;
+    b.innerHTML = 'Importing…';
+    try {
+      const r = await api('/api/keepa/import', { method: 'POST', body: { asins: asin, domain } });
+      if (r.imported.includes(asin)) toast(`${asin} imported to catalog`, 'ok');
+      else if (r.updated.includes(asin)) toast(`${asin} already in catalog — attributes updated`, 'ok');
+      else toast(`${asin} not cached — look it up first`, 'warn');
+      refreshCounts();
+    } catch (e) { toast(e.message, 'err'); }
+    b.disabled = false;
+    b.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Import to catalog';
+  }));
+}
+
+function brandCompareCell(summary, total) {
+  if (!summary || !summary.distinct) return '<span class="bc-empty">—</span>';
+  return esc(summary.text);
+}
+
+function coverageBar(pct) {
+  return `<div class="bc-cov"><div class="bc-cov-fill" style="width:${pct}%"></div></div><span class="bc-cov-num">${pct}%</span>`;
+}
+
+async function runBrandCompare() {
+  brandCompareState.brand = $('#bc-brand').value.trim();
+  brandCompareState.category = $('#bc-category').value;
+  brandCompareState.market = $('#bc-market').value;
+  brandCompareState.limit = Number($('#bc-limit').value || 6);
+  if (!brandCompareState.brand) return toast('Enter your brand first', 'warn');
+  const res = $('#bc-results');
+  res.innerHTML = '<div class="empty-state">Comparing…</div>';
+  try {
+    const data = await api('/api/brandcompare/compare', { method: 'POST', body: {
+      brand: brandCompareState.brand, category: brandCompareState.category,
+      market: brandCompareState.market, limit: brandCompareState.limit,
+    }});
+    brandCompareState.result = data;
+    renderBrandCompareResult(data);
+  } catch (e) {
+    res.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderBrandCompareResult(d) {
+  const attrs = d.attributes || [];
+  const you = d.your_brand || {};
+  const comps = d.competitors || [];
+  const columns = [{ key: '__you__', label: `Your brand${you.brand ? ` — ${you.brand}` : ''}`, summary: you }]
+    .concat(comps.map((c) => ({ key: c.brand, label: c.brand, summary: c })));
+
+  const scopeNote = `<div class="settings-note">${esc(d.note)} ${d.catalog_sourced ? '· catalog-sourced' : ''}</div>`;
+
+  // competitor ranking strip
+  let ranking = '';
+  if (comps.length) {
+    ranking = `<div class="bc-rank">
+      <div class="bc-rank-title">Top competitors in this scope</div>
+      ${comps.map((c) => `
+        <div class="bc-rank-card">
+          <div class="bc-rank-head"><b>${esc(c.brand)}</b><span class="mono">${c.product_count} product${c.product_count === 1 ? '' : 's'}</span></div>
+          ${coverageBar(c.coverage_pct)}
+          <div class="bc-rank-skus">${(c.sample_skus || []).map((s) => `<code>${esc(s)}</code>`).join(' ')}</div>
+        </div>`).join('')}
+    </div>`;
+  } else {
+    ranking = `<div class="empty-state">No competitor brands found in the catalog for this scope. Import competitor data (Catalog Ingest) — or run the AI brief below.</div>`;
+  }
+
+  if (!you.product_count && comps.length === 0 && !ranking) {
+    // fully empty
+  }
+
+  const youNote = you.product_count === 0
+    ? `<div class="settings-note">“${esc(d.brand)}” has no products in this scope — competitors below are other brands present in the catalog.</div>` : '';
+
+  const head = `<tr><th class="bc-attr-head">Value attribute</th>${columns.map((c) =>
+    `<th>${esc(c.label)}<div class="bc-th-sub">${c.summary.product_count} products · ${c.summary.coverage}/${attrs.length} attrs</div></th>`).join('')}</tr>`;
+
+  const body = attrs.map((a) => `<tr>
+    <td class="bc-attr">${esc(a.label)}</td>
+    ${columns.map((c) => `<td>${brandCompareCell(c.summary.attributes[a.id])}</td>`).join('')}
+  </tr>`).join('');
+
+  $('#bc-results').innerHTML = `
+    ${scopeNote}${youNote}${ranking}
+    <table class="data-table bc-matrix"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+async function runBrandBrief() {
+  const brand = $('#bc-brand').value.trim();
+  const category = $('#bc-category').value;
+  if (!brand) return toast('Enter your brand first', 'warn');
+  if (!category) return toast('Pick a category for the AI brief', 'warn');
+  const res = $('#bc-results');
+  res.innerHTML = '<div class="empty-state">Generating competitive brief…</div>';
+  try {
+    const data = await api('/api/brandcompare/brief', { method: 'POST', body: { brand, category } });
+    if (!data.ai) {
+      res.innerHTML = `<div class="empty-state">${esc(data.error || 'No brief generated.')}</div>`;
+      return;
+    }
+    const b = data.brief || {};
+    const rows = (b.attributes || []).map((a) => `<tr>
+      <td class="bc-attr">${esc(a.label || '')}</td>
+      <td>${esc(a.summary || '')}</td>
+    </tr>`).join('');
+    res.innerHTML = `
+      <div class="settings-note">AI-generated competitive brief · ${esc(brand)} · ${esc(category)} — synthesised, not sourced from your catalog.</div>
+      ${b.overview ? `<div class="bc-brief-overview">${esc(b.overview)}</div>` : ''}
+      <table class="data-table"><thead><tr><th>Value attribute</th><th>What top competitors typically do</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="2" class="empty-state">No attribute summaries returned.</td></tr>'}</tbody></table>`;
+  } catch (e) {
+    res.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ==========================================================================
+   DATA MANAGEMENT — tables, pivot, charts, wrangler, saved views, Asana push
+   ========================================================================== */
+const dataState = { source: 'products', q: '', mode: 'table', group_by: 'category', agg: 'count', measure: 'score', selected: new Set(), rows: [], columns: [] };
+
+async function renderData() {
+  const root = $('#view-root');
+  root.innerHTML = `
+    <div class="view">
+      <div class="view-header">
+        <div><div class="view-title">Data Management</div><div class="view-sub">Tables, pivot, charts, column profiling, saved views, Asana push, and ingest.</div></div>
+        <div class="view-actions">
+          <button class="btn-secondary" id="dm-canvas"><span class="codicon codicon-graph"></span> Flow Canvas</button>
+          <button class="btn-secondary" id="dm-export"><span class="codicon codicon-cloud-upload"></span> Export CSV</button>
+          <button class="btn-primary" id="dm-asana"><span class="codicon codicon-organization"></span> Push to Asana</button>
+        </div>
+      </div>
+      <div class="dm-toolbar">
+        <select id="dm-source"></select>
+        <input id="dm-q" type="text" placeholder="Search…" />
+        <div class="dm-tabs">${['table', 'pivot', 'wrangler', 'views', 'ingest'].map((m) => `<button class="dm-tab ${dataState.mode === m ? 'active' : ''}" data-dm-mode="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
+      </div>
+      <div id="dm-body"></div>
+    </div>`;
+  try {
+    const srcs = await api('/api/data/sources');
+    $('#dm-source').innerHTML = srcs.map((s) => `<option value="${s.id}" ${s.id === dataState.source ? 'selected' : ''}>${esc(s.label)} (${s.count})</option>`).join('');
+  } catch { /* */ }
+  $('#dm-source').addEventListener('change', (e) => { dataState.source = e.target.value; dataState.selected.clear(); renderDataBody(); });
+  $('#dm-q').value = dataState.q;
+  $('#dm-q').addEventListener('input', (e) => { dataState.q = e.target.value; });
+  $('#dm-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') renderDataBody(); });
+  root.querySelectorAll('[data-dm-mode]').forEach((b) => b.addEventListener('click', () => { dataState.mode = b.dataset.dmMode; renderData(); }));
+  $('#dm-canvas').addEventListener('click', () => showView('bernie'));
+  $('#dm-export').addEventListener('click', exportDataCsv);
+  $('#dm-asana').addEventListener('click', openAsanaPush);
+  renderDataBody();
+}
+
+function renderDataBody() {
+  const body = $('#dm-body');
+  if (dataState.mode === 'pivot') return renderDataPivot(body);
+  if (dataState.mode === 'wrangler') return renderDataWrangler(body);
+  if (dataState.mode === 'views') return renderDataViews(body);
+  if (dataState.mode === 'ingest') return renderDataIngest(body);
+  renderDataTable(body);
+}
+
+async function renderDataTable(body) {
+  body.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const data = await api(`/api/data/table?source=${dataState.source}&limit=500&q=${encodeURIComponent(dataState.q)}`);
+    dataState.rows = data.rows; dataState.columns = data.columns;
+    const cols = ['#', ...data.columns];
+    const head = cols.map((c, i) => i === 0 ? '<th></th>' : `<th data-dm-sort="${esc(c)}">${esc(c)}</th>`).join('');
+    const tbody = data.rows.map((r) => {
+      const id = r.id ?? r.sku ?? r.name;
+      const checked = dataState.selected.has(String(id)) ? 'checked' : '';
+      return `<tr>
+        <td><input type="checkbox" class="dm-sel" data-id="${esc(String(id))}" ${checked} /></td>
+        ${data.columns.map((c) => `<td>${esc(r[c] ?? '')}</td>`).join('')}
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<table class="data-table" id="dm-table"><thead><tr>${head}</tr></thead><tbody>${tbody || '<tr><td colspan="99" class="empty-state">No rows.</td></tr>'}</tbody></table>`;
+    body.querySelectorAll('.dm-sel').forEach((cb) => cb.addEventListener('change', () => {
+      if (cb.checked) dataState.selected.add(cb.dataset.id); else dataState.selected.delete(cb.dataset.id);
+    }));
+  } catch (e) { body.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+}
+
+async function renderDataPivot(body) {
+  body.innerHTML = `
+    <div class="field-row" style="margin-bottom:0.5rem">
+      <label class="field"><span>Group by</span><select id="dm-group"></select></label>
+      <label class="field"><span>Aggregate</span><select id="dm-agg">
+        <option value="count" ${dataState.agg === 'count' ? 'selected' : ''}>Count</option>
+        <option value="avg" ${dataState.agg === 'avg' ? 'selected' : ''}>Average</option>
+        <option value="sum" ${dataState.agg === 'sum' ? 'selected' : ''}>Sum</option>
+        <option value="min" ${dataState.agg === 'min' ? 'selected' : ''}>Min</option>
+        <option value="max" ${dataState.agg === 'max' ? 'selected' : ''}>Max</option>
+      </select></label>
+      <label class="field"><span>Measure</span><select id="dm-measure"><option value="score">score</option></select></label>
+    </div>
+    <div id="dm-pivot-out"></div>`;
+  try {
+    const srcs = await api('/api/data/sources');
+    const src = srcs.find((s) => s.id === dataState.source) || { groupable: ['category'] };
+    $('#dm-group').innerHTML = src.groupable.map((g) => `<option value="${esc(g)}" ${g === dataState.group_by ? 'selected' : ''}>${esc(g)}</option>`).join('');
+  } catch { /* */ }
+  const run = async () => {
+    dataState.group_by = $('#dm-group').value; dataState.agg = $('#dm-agg').value;
+    const out = $('#dm-pivot-out');
+    out.innerHTML = '<div class="empty-state">Aggregating…</div>';
+    try {
+      const res = await api('/api/data/pivot', { method: 'POST', body: { source: dataState.source, group_by: dataState.group_by, agg: dataState.agg, measure: dataState.measure, q: dataState.q } });
+      const rows = res.rows || [];
+      const max = Math.max(1, ...rows.map((r) => Number(r.value) || 0));
+      const bars = rows.map((r) => `<div class="dm-bar-row"><span class="dm-bar-label">${esc(r.key)}</span><div class="dm-bar-track"><div class="dm-bar-fill" style="width:${(Number(r.value) / max * 100).toFixed(1)}%"></div></div><span class="dm-bar-val">${r.value}</span></div>`).join('');
+      out.innerHTML = `
+        <div class="dm-chart">${bars || '<div class="empty-state">No data.</div>'}</div>
+        <table class="data-table" style="margin-top:0.5rem"><thead><tr><th>${esc(res.group_by)}</th><th>${esc(res.agg)}${res.agg === 'count' ? '' : ` (${esc(res.measure)})`}</th><th>Rows</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr><td>${esc(r.key)}</td><td>${r.value}</td><td>${r.count}</td></tr>`).join('')}</tbody></table>`;
+    } catch (e) { out.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+  };
+  $('#dm-group').addEventListener('change', run);
+  $('#dm-agg').addEventListener('change', run);
+  run();
+}
+
+async function renderDataWrangler(body) {
+  body.innerHTML = '<div class="empty-state">Profiling…</div>';
+  try {
+    const data = await api(`/api/data/table?source=${dataState.source}&limit=1000&q=${encodeURIComponent(dataState.q)}`);
+    const rows = data.rows; const columns = data.columns;
+    const profile = columns.map((col) => {
+      const vals = rows.map((r) => r[col]).filter((v) => v !== null && v !== undefined && v !== '');
+      const uniq = new Set(vals.map((v) => String(v)));
+      const examples = Array.from(uniq).slice(0, 3).join(', ');
+      return `<tr>
+        <td>${esc(col)}</td>
+        <td>${rows.length - vals.length}</td>
+        <td>${uniq.size}</td>
+        <td style="color:var(--muted-fg);max-width:24rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(examples) || '—'}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `
+      <div class="settings-note">Column profiling over ${rows.length} rows — missing values, unique counts, and example values (a lightweight data-wrangler view).</div>
+      <table class="data-table"><thead><tr><th>Column</th><th>Missing</th><th>Unique</th><th>Examples</th></tr></thead><tbody>${profile}</tbody></table>`;
+  } catch (e) { body.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+}
+
+async function renderDataViews(body) {
+  body.innerHTML = '<div class="empty-state">Loading saved views…</div>';
+  const load = async () => {
+    try {
+      const views = await api('/api/data/views');
+      body.innerHTML = `
+        <div class="field-row" style="margin-bottom:0.5rem">
+          <label class="field"><span>Save current view as</span><input id="dv-name" placeholder="e.g. Blockers in Beauty" /></label>
+          <label class="field"><span>&nbsp;</span><button class="btn-primary" id="dv-save" style="min-height:var(--control-h)">Save</button></label>
+        </div>
+        <table class="data-table"><thead><tr><th>View</th><th>Source</th><th>Created</th><th></th></tr></thead>
+        <tbody>${views.map((v) => `<tr><td>${esc(v.name)}</td><td>${esc(v.source)}</td><td class="mono">${fmtAgo(v.created_at) || '—'}</td><td style="text-align:right"><button class="btn-mini" data-dv-load="${v.id}">Open</button> <button class="btn-mini btn-mini-danger" data-dv-del="${v.id}">Delete</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty-state">No saved views.</td></tr>'}</tbody></table>`;
+      body.querySelector('#dv-save').addEventListener('click', async () => {
+        const name = body.querySelector('#dv-name').value.trim();
+        if (!name) return toast('Name is required', 'err');
+        await api('/api/data/views', { method: 'POST', body: { name, source: dataState.source, config: { q: dataState.q, group_by: dataState.group_by, agg: dataState.agg } } });
+        toast('View saved', 'ok'); load();
+      });
+      body.querySelectorAll('[data-dv-load]').forEach((b) => b.addEventListener('click', () => {
+        dataState.mode = 'table'; renderData();
+      }));
+      body.querySelectorAll('[data-dv-del]').forEach((b) => b.addEventListener('click', async () => {
+        await api(`/api/data/views/${b.dataset.dvDel}`, { method: 'DELETE' }); toast('View deleted', 'ok'); load();
+      }));
+    } catch (e) { body.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+  };
+  load();
+}
+
+async function renderDataIngest(body) {
+  body.innerHTML = '<div class="empty-state">Loading ingest sources…</div>';
+  try {
+    const res = await api('/api/data/ingest/sources');
+    const badge = (s) => s === 'ready' ? 'pill-int pill-int-configured' : 'pill-int pill-int-missing';
+    body.innerHTML = `
+      <div class="settings-note">Ingest sources for Data Management — ready sources are live, others need credentials.</div>
+      <table class="data-table"><thead><tr><th>Source</th><th>Status</th><th>Notes</th></tr></thead>
+      <tbody>${res.sources.map((s) => `<tr><td>${esc(s.label)}</td><td><span class="${badge(s.status)}">${esc(s.status)}</span></td><td style="color:var(--muted-fg)">${esc(s.note)}</td></tr>`).join('')}</tbody></table>`;
+  } catch (e) { body.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+}
+
+async function exportDataCsv() {
+  try {
+    const data = await api(`/api/data/table?source=${dataState.source}&limit=2000&q=${encodeURIComponent(dataState.q)}`);
+    const cols = data.columns;
+    const escCsv = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const lines = [cols.map(escCsv).join(',')];
+    data.rows.forEach((r) => lines.push(cols.map((c) => escCsv(r[c])).join(',')));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `conductor-${dataState.source}.csv`; a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { toast(`Export failed: ${e.message}`, 'err'); }
+}
+
+async function openAsanaPush() {
+  let projects = [];
+  try { projects = await api('/api/asana/projects'); } catch { /* */ }
+  const projOpts = projects.map((p) => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  const count = dataState.selected.size || dataState.rows.length;
+  openModal('Push to Asana', `
+    <div class="settings-note">Create an Asana task${count ? ` — ${count} selected row${count === 1 ? '' : 's'} will be appended to the notes` : ''}.</div>
+    <label class="field"><span>Task name</span><input id="ap-name" placeholder="e.g. Review catalog data quality" /></label>
+    <label class="field"><span>Project</span><input id="ap-project" list="ap-projects" placeholder="Project name or GID" /><datalist id="ap-projects">${projOpts}</datalist></label>
+    <label class="field"><span>Notes</span><textarea id="ap-notes" rows="3"></textarea></label>`,
+    `<button class="btn-secondary" id="ap-cancel">Cancel</button>
+     <button class="btn-primary" id="ap-do">Create task</button>`);
+  $('#ap-cancel').addEventListener('click', closeModal);
+  $('#ap-do').addEventListener('click', async () => {
+    const name = $('#ap-name').value.trim();
+    if (!name) return toast('Task name is required', 'err');
+    const rows = dataState.rows.filter((r) => dataState.selected.has(String(r.id ?? r.sku ?? r.name)));
+    try {
+      const res = await api('/api/data/push-asana', { method: 'POST', body: { name, notes: $('#ap-notes').value, project: $('#ap-project').value, rows } });
+      closeModal();
+      if (res.executed === 'live') toast(`Asana task created: ${res.detail}`, 'ok');
+      else toast(res.detail || 'Simulated (no Asana PAT configured)', 'warn');
+    } catch (e) { toast(`Push failed: ${e.message}`, 'err'); }
+  });
+}
+
+/* ==========================================================================
+   FEATURE STUDIO — report → reusable feature → Asana → workflow + automation
+   ========================================================================== */
+const FT_TYPES = ['present', 'min_length', 'max_length', 'contains', 'in_values'];
+
+function ftSerializeArgs(f) {
+  const a = f.args || {};
+  if (f.type === 'min_length') return a.min != null ? 'min:' + a.min : '';
+  if (f.type === 'max_length') return a.max != null ? 'max:' + a.max : '';
+  if (f.type === 'contains') return a.text ? 'text:' + a.text : '';
+  if (f.type === 'in_values') return (a.values || []).join(',');
+  return '';
+}
+function ftParseArgs(type, raw) {
+  raw = (raw || '').trim();
+  const args = {};
+  if (type === 'min_length') { const m = parseInt(raw.replace('min:', ''), 10); if (!isNaN(m)) args.min = m; }
+  else if (type === 'max_length') { const m = parseInt(raw.replace('max:', ''), 10); if (!isNaN(m)) args.max = m; }
+  else if (type === 'contains') { args.text = raw.replace('text:', '').trim(); }
+  else if (type === 'in_values') { args.values = raw.split(',').map((s) => s.trim()).filter(Boolean); }
+  return args;
+}
+function ftFieldOptions(cur) {
+  const fields = ['name', 'sku', 'category', 'market', 'brand', 'source'];
+  if (cur && !fields.includes(cur)) fields.push(cur);
+  return fields.map((f) => `<option value="${esc(f)}" ${cur === f ? 'selected' : ''}>${esc(f)}</option>`).join('');
+}
+
+async function renderFeatureStudio() {
+  const root = $('#view-root');
+  root.innerHTML = `
+    <div class="view">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Feature Studio</div>
+          <div class="view-sub">Turn a report into a reusable feature — derive the rating's factors with AI, run it on live data, push actions to Asana, then generate a workflow diagram + automation.</div>
+        </div>
+        <div class="view-actions"><button class="btn-primary" id="ft-new"><span class="codicon codicon-add"></span> New from report</button></div>
+      </div>
+      <div id="ft-list" class="empty-state">Loading…</div>
+      <div id="ft-detail"></div>
+    </div>`;
+  $('#ft-new').addEventListener('click', () => openFeatureEditor(null));
+  await refreshFeatureList();
+}
+
+async function refreshFeatureList() {
+  const list = $('#ft-list');
+  if (!list) return;
+  try {
+    const feats = await api('/api/features');
+    if (!feats.length) {
+      list.innerHTML = `<div class="empty-state"><div class="big"><span class="codicon codicon-beaker"></span></div><div>No features yet — paste a report and derive your first one.</div><button class="btn-primary" id="ft-new2" style="margin-top:0.75rem">New from report</button></div>`;
+      const b = $('#ft-new2'); if (b) b.addEventListener('click', () => openFeatureEditor(null));
+      return;
+    }
+    list.innerHTML = `<table class="data-table"><thead><tr><th>Feature</th><th>Rating</th><th>Factors</th><th>Bands</th><th>Updated</th><th></th></tr></thead><tbody>${feats.map((f) => `
+      <tr>
+        <td><b>${esc(f.name)}</b>${f.description ? `<div style="color:var(--muted-fg)">${esc(f.description)}</div>` : ''}</td>
+        <td>${esc(f.rating_label)}</td>
+        <td>${f.factor_count}</td>
+        <td>${f.action_count}</td>
+        <td class="mono">${fmtAgo(f.updated_at) || '—'}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="btn-mini" data-ft-run="${f.id}">Run</button>
+          <button class="btn-mini" data-ft-push="${f.id}">Push</button>
+          <button class="btn-mini" data-ft-build="${f.id}">Build</button>
+          <button class="btn-mini" data-ft-edit="${f.id}">Edit</button>
+          <button class="btn-mini btn-mini-danger" data-ft-del="${f.id}">Delete</button>
+        </td>
+      </tr>`).join('')}</tbody></table>`;
+    list.querySelectorAll('[data-ft-run]').forEach((b) => b.addEventListener('click', () => ftRun(Number(b.dataset.ftRun))));
+    list.querySelectorAll('[data-ft-push]').forEach((b) => b.addEventListener('click', () => ftPush(Number(b.dataset.ftPush))));
+    list.querySelectorAll('[data-ft-build]').forEach((b) => b.addEventListener('click', () => ftBuild(Number(b.dataset.ftBuild))));
+    list.querySelectorAll('[data-ft-edit]').forEach((b) => b.addEventListener('click', () => openFeatureEditor(Number(b.dataset.ftEdit))));
+    list.querySelectorAll('[data-ft-del]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Delete this feature?')) return;
+      await api(`/api/features/${b.dataset.ftDel}`, { method: 'DELETE' });
+      toast('Feature deleted', 'ok'); refreshFeatureList();
+    }));
+  } catch (e) { list.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+}
+
+async function ftRun(id) {
+  const detail = $('#ft-detail');
+  detail.innerHTML = '<div class="empty-state">Scoring listings…</div>';
+  try {
+    const res = await api(`/api/features/${id}/run`, { method: 'POST', body: {} });
+    const rows = res.results.map((r) => `
+      <tr>
+        <td class="mono">${esc(r.sku)}</td>
+        <td>${esc(r.name)}</td>
+        <td>${esc(r.category)}</td>
+        <td><span class="${r.score < 60 ? 'pill-int pill-int-missing' : r.score < 80 ? 'pill-int' : 'pill-int pill-int-configured'}">${r.score}</span></td>
+        <td style="color:var(--muted-fg);max-width:24rem">${r.failed_factors.length ? esc(r.failed_factors.join(', ')) : '—'}</td>
+      </tr>`).join('');
+    detail.innerHTML = `
+      <div class="ft-detail-card">
+        <div class="ft-detail-head"><b>${esc(res.feature.name)}</b> — ${res.results.length} listing(s) scored
+          <span style="flex:1"></span>
+          <button class="btn-secondary" id="ft-run-push"><span class="codicon codicon-organization"></span> Push to Asana</button>
+          <button class="btn-secondary" id="ft-run-build"><span class="codicon codicon-graph"></span> Build workflow + automation</button>
+        </div>
+        <table class="data-table"><thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Score</th><th>Failed factors</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty-state">No products to score.</td></tr>'}</tbody></table>
+      </div>`;
+    $('#ft-run-push').addEventListener('click', () => ftPush(id));
+    $('#ft-run-build').addEventListener('click', () => ftBuild(id));
+  } catch (e) { detail.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
+}
+
+async function ftPush(id) {
+  try {
+    const res = await api(`/api/features/${id}/push-asana`, { method: 'POST', body: {} });
+    const live = res.live || 0;
+    toast(`${res.total} task(s) → ${live} live, ${res.total - live} simulated`, live ? 'ok' : 'warn');
+  } catch (e) { toast(`Push failed: ${e.message}`, 'err'); }
+}
+
+async function ftBuild(id) {
+  try {
+    const res = await api(`/api/features/${id}/build`, { method: 'POST', body: {} });
+    openModal('Feature built', `
+      <div class="settings-note">Created a workflow diagram <b>#${res.canvas_id}</b> and an automation <b>#${res.automation_id}</b> (disabled — enable it once you review).</div>
+      <div class="settings-note" style="margin-top:0.5rem">Open Flow Canvas to see/edit the diagram, or Automations to wire the trigger and enable it.</div>`,
+      `<button class="btn-secondary" id="ft-bc">Close</button>
+       <button class="btn-primary" id="ft-open-canvas">Open Flow Canvas</button>`);
+    $('#ft-bc').addEventListener('click', closeModal);
+    $('#ft-open-canvas').addEventListener('click', () => { closeModal(); showView('bernie'); });
+  } catch (e) { toast(`Build failed: ${e.message}`, 'err'); }
+}
+
+let featDraft = null;
+
+async function openFeatureEditor(id) {
+  if (id) {
+    const f = await api(`/api/features/${id}`);
+    featDraft = JSON.parse(JSON.stringify(f.spec));
+  } else {
+    featDraft = {
+      name: '', description: '', rating_label: 'Listing Quality Score (0-100)',
+      factors: [],
+      actions: [{ min_score: 0, max_score: 60, project: 'Catalog Ops', name_template: 'Fix listing {sku} ({score}/100)', notes_template: 'Score {score}/100. Failed: {failed_factors}' }],
+      source_report: '',
+    };
+  }
+
+  const renderFactors = () => {
+    const rows = (featDraft.factors || []).map((f, i) => `
+      <div class="ft-factor">
+        <div class="ft-row">
+          <input class="ft-f-label" value="${esc(f.label || '')}" placeholder="Check label" style="flex:2" />
+          <select class="ft-f-field" style="flex:1">${ftFieldOptions(f.field)}</select>
+          <select class="ft-f-type" style="flex:1">${FT_TYPES.map((t) => `<option value="${t}" ${f.type === t ? 'selected' : ''}>${t}</option>`).join('')}</select>
+          <input class="ft-f-weight" type="number" min="1" max="100" value="${f.weight || 10}" title="Weight" style="width:4.5rem" />
+          <button class="nav-mini nav-mini-danger" data-ft-fdel="${i}" title="Remove factor">×</button>
+        </div>
+        <div class="ft-row"><span class="ft-arglabel">args</span><input class="ft-f-args" value="${esc(ftSerializeArgs(f))}" placeholder="min:80 · max:200 · text:keyword · a,b,c" style="flex:1" /></div>
+      </div>`).join('');
+    $('#ft-factors').innerHTML = rows || '<div class="nav-empty">No factors — add below or derive from a report.</div>';
+    $('#ft-factors').querySelectorAll('[data-ft-fdel]').forEach((b) => b.addEventListener('click', () => {
+      featDraft.factors.splice(Number(b.dataset.ftFdel), 1); renderFactors();
+    }));
+  };
+
+  const renderBands = () => {
+    const rows = (featDraft.actions || []).map((b, i) => `
+      <div class="ft-factor">
+        <div class="ft-row">
+          <input class="ft-b-min" type="number" value="${b.min_score ?? 0}" title="min score" style="width:4.5rem" />
+          <input class="ft-b-max" type="number" value="${b.max_score ?? 60}" title="max score" style="width:4.5rem" />
+          <input class="ft-b-project" value="${esc(b.project || '')}" placeholder="Asana project" style="flex:1" />
+          <button class="nav-mini nav-mini-danger" data-ft-bdel="${i}" title="Remove band">×</button>
+        </div>
+        <div class="ft-row">
+          <input class="ft-b-name" value="${esc(b.name_template || '')}" placeholder="Task name template (e.g. Fix listing {sku})" style="flex:1" />
+          <input class="ft-b-notes" value="${esc(b.notes_template || '')}" placeholder="Notes template ({score},{failed_factors})" style="flex:1" />
+        </div>
+      </div>`).join('');
+    $('#ft-actions').innerHTML = rows || '<div class="nav-empty">No action bands — add one.</div>';
+    $('#ft-actions').querySelectorAll('[data-ft-bdel]').forEach((b) => b.addEventListener('click', () => {
+      featDraft.actions.splice(Number(b.dataset.ftBdel), 1); renderBands();
+    }));
+  };
+
+  openModal(id ? 'Edit Feature' : 'New Feature from Report', `
+    <label class="field"><span>Report (paste the doc describing the new rating)</span>
+      <textarea id="ft-report" rows="4" placeholder="Paste the report text here — the app will derive the rating's factors and scoring logic…"></textarea></label>
+    <div class="settings-actions" style="margin-bottom:0.5rem">
+      <button class="btn-primary" id="ft-derive"><span class="codicon codicon-sparkle"></span> Derive with AI</button>
+      <span id="ft-derive-status" class="settings-note" style="margin:0"></span>
+    </div>
+    <div class="field-row">
+      <label class="field"><span>Feature name</span><input id="ft-name" value="${esc(featDraft.name)}" placeholder="e.g. Listing Quality Score" /></label>
+      <label class="field"><span>Rating label</span><input id="ft-rating" value="${esc(featDraft.rating_label)}" /></label>
+    </div>
+    <label class="field"><span>Description</span><input id="ft-desc" value="${esc(featDraft.description)}" placeholder="What this feature evaluates" /></label>
+    <div class="field"><span>Factors (field → rule → weight)</span><div id="ft-factors" class="ft-grid"></div>
+      <button class="btn-secondary" id="ft-add-factor" style="margin-top:0.375rem">＋ Add factor</button></div>
+    <div class="field"><span>Asana action bands (score → task)</span><div id="ft-actions" class="ft-grid"></div>
+      <button class="btn-secondary" id="ft-add-band" style="margin-top:0.375rem">＋ Add band</button></div>`,
+    `<button class="btn-secondary" id="ft-cancel">Cancel</button>
+     <button class="btn-primary" id="ft-save">Save feature</button>`);
+
+  renderFactors();
+  renderBands();
+
+  $('#ft-derive').addEventListener('click', async () => {
+    const report = $('#ft-report').value.trim();
+    if (!report) return toast('Paste the report first', 'warn');
+    const status = $('#ft-derive-status');
+    status.textContent = 'Deriving…';
+    try {
+      const res = await api('/api/features/derive', { method: 'POST', body: { report } });
+      featDraft = res.spec;
+      $('#ft-name').value = featDraft.name || '';
+      $('#ft-rating').value = featDraft.rating_label || '';
+      $('#ft-desc').value = featDraft.description || '';
+      renderFactors(); renderBands();
+      status.textContent = res.ai ? `Derived ${featDraft.factors.length} factors.` : `No AI — ${res.error || 'built a blank template'}`;
+    } catch (e) { status.textContent = `Derive failed: ${e.message}`; }
+  });
+
+  $('#ft-add-factor').addEventListener('click', () => {
+    featDraft.factors = featDraft.factors || [];
+    featDraft.factors.push({ label: '', field: 'name', type: 'present', args: {}, weight: 10 });
+    renderFactors();
+  });
+  $('#ft-add-band').addEventListener('click', () => {
+    featDraft.actions = featDraft.actions || [];
+    featDraft.actions.push({ min_score: 0, max_score: 60, project: 'Catalog Ops', name_template: 'Fix listing {sku}', notes_template: '' });
+    renderBands();
+  });
+  $('#ft-cancel').addEventListener('click', closeModal);
+  $('#ft-save').addEventListener('click', async () => {
+    const factors = Array.from(document.querySelectorAll('#ft-factors .ft-factor')).map((row) => ({
+      label: row.querySelector('.ft-f-label').value.trim(),
+      field: row.querySelector('.ft-f-field').value,
+      type: row.querySelector('.ft-f-type').value,
+      args: ftParseArgs(row.querySelector('.ft-f-type').value, row.querySelector('.ft-f-args').value),
+      weight: Number(row.querySelector('.ft-f-weight').value || 10),
+    })).filter((f) => f.field);
+    const actions = Array.from(document.querySelectorAll('#ft-actions .ft-factor')).map((row) => ({
+      min_score: Number(row.querySelector('.ft-b-min').value || 0),
+      max_score: Number(row.querySelector('.ft-b-max').value || 60),
+      project: row.querySelector('.ft-b-project').value.trim() || 'Catalog Ops',
+      name_template: row.querySelector('.ft-b-name').value.trim(),
+      notes_template: row.querySelector('.ft-b-notes').value.trim(),
+    }));
+    const spec = {
+      name: $('#ft-name').value.trim(),
+      description: $('#ft-desc').value.trim(),
+      rating_label: $('#ft-rating').value.trim() || 'Listing Quality Score (0-100)',
+      factors, actions,
+      source_report: $('#ft-report').value.trim() || featDraft.source_report || '',
+    };
+    if (!spec.name) return toast('Feature name is required', 'err');
+    if (!factors.length) return toast('Add at least one factor', 'err');
+    try {
+      if (id) await api(`/api/features/${id}`, { method: 'PUT', body: { spec } });
+      else await api('/api/features', { method: 'POST', body: { spec } });
+      closeModal(); toast('Feature saved', 'ok'); refreshFeatureList();
+    } catch (e) { toast(`Save failed: ${e.message}`, 'err'); }
+  });
 }
