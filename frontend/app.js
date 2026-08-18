@@ -1675,7 +1675,11 @@ async function renderSettingsTab(tab) {
         const res = await window.desktop.checkForUpdates();
         if (res.error) setStatus('Check failed: ' + res.error);
         else if (res.reason === 'updates-disabled') setStatus('Updates are not enabled for this build.');
-        else if (res.available) setStatus(`Update v${res.version} available — downloading…`);
+        else if (res.downloaded) {
+          state.updateReady = { ready: true, version: res.downloaded };
+          const b = box.querySelector('#btn-install-update'); if (b) b.hidden = false;
+          setStatus(`Conductor ${res.downloaded} downloaded and ready — restart to install.`);
+        } else if (res.available) setStatus(`Update v${res.version} available — downloading…`);
         else setStatus('You are up to date.');
       } catch (e) {
         setStatus('Check failed: ' + (e && e.message ? e.message : e));
@@ -1804,23 +1808,43 @@ async function initAiComposer() {
 /* ------------------------------------------------------- auto-update UI */
 function wireUpdates() {
   if (!window.desktop || !window.desktop.onUpdateEvent) return; // browser / non-Electron
+  let downloadingVersion = null;
+  const markReady = (version) => {
+    if (!version) return;
+    state.updateReady = { ready: true, version };
+    const b = $('#btn-install-update');
+    if (b) { b.hidden = false; }
+    const st = $('#upd-status');
+    if (st) st.textContent = `Conductor ${version} downloaded and ready — restart to install.`;
+  };
   window.desktop.onUpdateEvent((ev) => {
     if (!ev || !ev.event) return;
     if (ev.event === 'update-available') {
+      downloadingVersion = ev.version;
       toast(`Conductor ${ev.version} available — downloading…`, 'info');
-    } else if (ev.event === 'update-downloaded') {
-      state.updateReady = { ready: true, version: ev.version };
-      toast(`Conductor ${ev.version} ready — restart to install`, 'ok');
-      const b = $('#btn-install-update');
-      if (b) { b.hidden = false; }
+    } else if (ev.event === 'download-progress') {
+      const pct = Math.round(ev.percent || 0);
       const st = $('#upd-status');
-      if (st) st.textContent = `Conductor ${ev.version} downloaded and ready — restart to install.`;
+      if (st) st.textContent = `Downloading Conductor ${downloadingVersion || ''}… ${pct}%`;
+    } else if (ev.event === 'update-downloaded') {
+      downloadingVersion = ev.version;
+      markReady(ev.version);
+      toast(`Conductor ${ev.version} ready — restart to install`, 'ok');
     } else if (ev.event === 'error') {
       toast(`Update check failed: ${ev.message}`, 'err');
       const st = $('#upd-status');
       if (st) st.textContent = `Update check failed: ${esc(ev.message)}`;
     }
   });
+  // The main process can finish downloading during the ~30–90s backend cold
+  // start, before this renderer loads — the update-downloaded event is then
+  // missed. Reconcile against the main process's persisted state so a staged
+  // update still surfaces as "ready to install" instead of "downloading…".
+  if (window.desktop.getUpdateInfo) {
+    window.desktop.getUpdateInfo().then((info) => {
+      if (info && info.downloaded) markReady(info.downloaded);
+    }).catch(() => {});
+  }
 }
 
 /* ------------------------------------------------------- warm data cache

@@ -50,6 +50,7 @@ let backendProc = null;
 let backendPort = 8790;
 let win = null;
 let autoUpdater = null; // electron-updater instance, module scope so IPC can reach it
+let downloadedVersion = null; // version of a fully-downloaded update, persisted for renderer reconciliation
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -286,6 +287,7 @@ function setupAutoUpdater() {
     percent: Math.round(p.percent || 0), transferred: p.transferred, total: p.total,
   }));
   autoUpdater.on('update-downloaded', (info) => {
+    downloadedVersion = (info && info.version) || null;
     emit('update-downloaded', { version: info && info.version });
     if (!win) return;
     dialog.showMessageBox(win, {
@@ -315,16 +317,17 @@ ipcMain.handle('updates:info', () => ({
   version: app.getVersion(),
   isPackaged: app.isPackaged,
   enabled: !!autoUpdater,
+  downloaded: downloadedVersion,
 }));
 
 ipcMain.handle('updates:check', async () => {
-  if (!autoUpdater) return { available: false, reason: 'updates-disabled' };
+  if (!autoUpdater) return { available: false, reason: 'updates-disabled', downloaded: downloadedVersion };
   try {
     const res = await autoUpdater.checkForUpdates();
     const info = res && res.updateInfo ? res.updateInfo : null;
-    return { available: !!info, version: info ? info.version : null };
+    return { available: !!info, version: info ? info.version : null, downloaded: downloadedVersion };
   } catch (err) {
-    return { available: false, error: String((err && err.message) || err) };
+    return { available: false, error: String((err && err.message) || err), downloaded: downloadedVersion };
   }
 });
 
