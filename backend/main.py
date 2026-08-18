@@ -40,16 +40,20 @@ import asana_sync
 storage.init_db()
 from hub import init_hub_db
 from keepa import init_keepa_db
+from people import init_people_db
+from localsources import init_local_sources_db
 
 init_hub_db()
 init_keepa_db()
+init_people_db()
+init_local_sources_db()
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -91,7 +95,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "products": storage.count_products(),
     }
 
@@ -754,6 +758,9 @@ from data import router as data_router
 from features import router as features_router
 from brandcompare import router as brandcompare_router
 from keepa import router as keepa_router
+from people import router as people_router
+from bulkimport import router as bulkimport_router
+from localsources import router as localsources_router
 
 app.include_router(plugins_router)
 app.include_router(hub_router)
@@ -765,6 +772,9 @@ app.include_router(data_router)
 app.include_router(features_router)
 app.include_router(brandcompare_router)
 app.include_router(keepa_router)
+app.include_router(people_router)
+app.include_router(bulkimport_router)
+app.include_router(localsources_router)
 
 
 # --------------------------------------------------------------------------

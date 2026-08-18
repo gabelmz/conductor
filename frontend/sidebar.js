@@ -20,6 +20,8 @@ const NAV_ITEMS = {
   dashboard:       { label: 'Dashboard',          icon: 'codicon-dashboard',          view: 'dashboard' },
   workflows:       { label: 'Workflows',          icon: 'codicon-git-merge',          view: 'workflows' },
   data:            { label: 'Data Management',    icon: 'codicon-database',           view: 'data' },
+  import:          { label: 'Bulk Import',        icon: 'codicon-cloud-upload',       view: 'import' },
+  sources:         { label: 'Local Sources',      icon: 'codicon-folder-opened',      view: 'sources' },
   // Departments
   compliance:      { label: 'Compliance',         icon: 'codicon-shield',             view: 'checks',  count: 'checks' },
   content:         { label: 'Content',            icon: 'codicon-notebook',           view: 'content' },
@@ -78,7 +80,7 @@ const SIDEBAR_PRESETS = {
     label: 'Commerce Hub',
     desc: 'Everything — Core, Departments, marketplaces, Catalog, Automation, AI, Knowledge, Platform.',
     sections: [
-      { label: 'Core',        items: ['chat', 'dashboard', 'workflows', 'data'] },
+      { label: 'Core',        items: ['chat', 'dashboard', 'workflows', 'data', 'import', 'sources'] },
       { label: 'Departments', items: ['compliance', 'content', 'case', 'fba', 'customerservice'] },
       { label: 'Operations',  items: ['brands', 'people'] },
       { label: 'Platforms',   items: ['walmart', 'tiktok', 'target', 'spp', 'coastal', 'agency'] },
@@ -90,10 +92,10 @@ const SIDEBAR_PRESETS = {
     ],
   },
   core: {
-    label: 'Core (business)',
+    label: 'Core (Business)',
     desc: 'Business-unit lens — Core, Departments, Operations, marketplaces.',
     sections: [
-      { label: 'Core',        items: ['chat', 'dashboard', 'workflows'] },
+      { label: 'Core',        items: ['chat', 'dashboard', 'workflows', 'import', 'sources'] },
       { label: 'Departments', items: ['compliance', 'content', 'listings', 'case', 'fba', 'customerservice'] },
       { label: 'Operations',  items: ['products', 'brands', 'people', 'sops'] },
       { label: 'Platforms',   items: ['walmart', 'tiktok', 'target', 'spp', 'coastal', 'agency'] },
@@ -126,7 +128,7 @@ const SIDEBAR_PRESET_IDS = Object.keys(SIDEBAR_PRESETS);
 
 /* --------------------------------------------------------------- config */
 const SIDEBAR_KEY = 'conductor.sidebar.config';
-const DEFAULT_PRESET = 'commerce';
+const DEFAULT_PRESET = 'core';
 
 function sidebarDefaultConfig() {
   return { preset: DEFAULT_PRESET, sections: JSON.parse(JSON.stringify(SIDEBAR_PRESETS[DEFAULT_PRESET].sections)), custom: {} };

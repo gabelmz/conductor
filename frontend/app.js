@@ -142,6 +142,8 @@ const VIEW_RENDERERS = {
   guidelines: () => renderGuidelines(),
   workflows: () => renderWorkflows(),
   data: () => renderData(),
+  import: () => window.ConductorBulkImport.render(),
+  sources: () => window.ConductorLocalSources.render(),
   flatfile: () => renderFlatFile(),
   svl: () => renderSvl(),
   brandcompare: () => renderBrandCompare(),
@@ -152,7 +154,7 @@ const VIEW_RENDERERS = {
   fba: () => renderModuleStub('fba'),
   customerservice: () => renderModuleStub('customerservice'),
   brands: () => renderModuleStub('brands'),
-  people: () => renderModuleStub('people'),
+  people: () => window.ConductorPeople.render(),
   listings: () => renderModuleStub('listings'),
   walmart: () => renderModuleStub('walmart'),
   tiktok: () => renderModuleStub('tiktok'),
@@ -832,7 +834,6 @@ function actionSummary(a) {
   return (a.actions || []).map((x) => {
     const t = x.type;
     if (t === 'asana_create_task') return `📋 Asana task → ${esc(x.target || '?')}`;
-    if (t === 'slack_message') return `💬 Slack${x.payload && x.payload.channel ? ' ' + esc(x.payload.channel) : ''}`;
     if (t === 'ai_run') return `✨ AI: ${esc((x.payload || {}).workflow || '?')}`;
     if (t === 'sheets_append') return '📊 Sheets append';
     if (t === 'gmail_send') return '📧 Gmail';
@@ -846,8 +847,7 @@ function automationModalHTML(a = null) {
   const v = (k) => esc(a ? (a[k] ?? '') : '');
   const conds = a ? JSON.stringify(a.conditions || [], null, 2) : '[]';
   const acts = a ? JSON.stringify(a.actions || [], null, 2) : JSON.stringify([
-    { type: 'asana_create_task', target: 'Catalog Ops', payload: { name: 'Catalog: {task_name} ready', notes: '…' } },
-    { type: 'slack_message', payload: { channel: '#catalog', text: 'Handoff: {task_name}' } },
+    { type: 'asana_create_task', target: 'Catalog Ops', payload: { name: 'Catalog: {task_name} ready', notes: '…' } }
   ], null, 2);
   return `
     <div class="form-grid">
@@ -856,13 +856,13 @@ function automationModalHTML(a = null) {
       <div class="field-row">
         <label class="field"><span>Trigger source</span>
           <select id="f-a-source">
-            ${['asana', 'slack', 'webhook', 'sheets', 'forms', 'schedule', 'manual'].map((s) => `<option value="${s}" ${a && a.trigger_source === s ? 'selected' : ''}>${s}</option>`).join('')}
+            ${['asana', 'webhook', 'sheets', 'forms', 'schedule', 'manual'].map((s) => `<option value="${s}" ${a && a.trigger_source === s ? 'selected' : ''}>${s}</option>`).join('')}
           </select></label>
         <label class="field"><span>Trigger event</span><input id="f-a-event" value="${v('trigger_event')}" placeholder="task_completed, feedback_received…" /></label>
       </div>
       <label class="field"><span>Conditions (JSON — [{field, op: eq|neq|contains|exists, value}])</span><textarea id="f-a-conds" rows="3" spellcheck="false">${conds}</textarea></label>
-      <label class="field"><span>Actions (JSON — types: asana_create_task, slack_message, sheets_append, gmail_send, hubspot_update, webhook_out, ai_run, log_event)</span><textarea id="f-a-acts" rows="8" spellcheck="false">${acts}</textarea></label>
-      <div class="settings-note"><code>{field}</code> placeholders in action payloads are filled from the trigger event (e.g. <code>{task_name}</code>). Steps run <b>live</b> when credentials exist (Asana PAT, Slack webhook), otherwise they're logged as <b>simulated</b>.</div>
+      <label class="field"><span>Actions (JSON — types: asana_create_task, sheets_append, gmail_send, hubspot_update, webhook_out, ai_run, log_event)</span><textarea id="f-a-acts" rows="8" spellcheck="false">${acts}</textarea></label>
+      <div class="settings-note"><code>{field}</code> placeholders in action payloads are filled from the trigger event (e.g. <code>{task_name}</code>). Steps run <b>live</b> when credentials exist (Asana PAT), otherwise they're logged as <b>simulated</b>.</div>
     </div>`;
 }
 
@@ -929,7 +929,7 @@ async function runAutomationNow(a) {
 async function renderAutomations() {
   const root = $('#view-root');
   root.innerHTML = `<div class="view"><div class="view-header"><div><div class="view-title">Automations</div>
-    <div class="view-sub">Trigger → condition → action chains. Handoffs between Asana, Slack, Google Workspace, HubSpot, Looker Studio, Zapier and Make.com.</div></div>
+    <div class="view-sub">Trigger → condition → action chains. Handoffs between Asana, Google Workspace, HubSpot, Looker Studio, Zapier and Make.com.</div></div>
     <div class="view-actions"><button class="btn-primary" id="btn-new-auto"><span class="codicon codicon-add"></span> New automation</button></div></div>
     <div class="automation-grid" id="auto-grid"><div class="folder-loading">Loading…</div></div>
     <div class="card" id="run-panel" hidden></div></div>`;
@@ -1823,6 +1823,24 @@ function wireUpdates() {
   });
 }
 
+/* ------------------------------------------------------- warm data cache
+   Preloads catalog + compliance data once so Products/Compliance pages paint
+   instantly after a product upload (cache-first, refreshed after mutations). */
+const warm = { products: null, checksSummary: null };
+
+async function warmLoad() {
+  try {
+    const [products, checksSummary] = await Promise.all([
+      api('/api/products?limit=300'),
+      api('/api/checks/summary'),
+    ]);
+    warm.products = products;
+    warm.checksSummary = checksSummary;
+  } catch (e) { /* non-fatal — views fall back to their own fetch */ }
+}
+
+function invalidateWarm() { warm.products = null; warm.checksSummary = null; }
+
 async function boot() {
   window.__sidebarActiveView = state.view;
   if (window.ConductorSidebar) window.ConductorSidebar.renderSidebar();
@@ -1839,6 +1857,7 @@ async function boot() {
   initAiComposer();
   initChatContext();
   await Promise.all([refreshCounts(), refreshStatusbar()]);
+  warmLoad();
   setInterval(refreshStatusbar, 30000);
   applyGlass(getGlass());
 }
@@ -2601,7 +2620,7 @@ function buildPreview() {
           </div>
         </div>
         <div class="pv-card">
-          <div class="pv-t"><b style="color:var(--green)">● connected</b> · Asana · Slack · Webhooks</div>
+          <div class="pv-t"><b style="color:var(--green)">● connected</b> · Asana · Webhooks</div>
         </div>
       </div>
     </div>`;
@@ -3059,6 +3078,7 @@ async function submitProduct(item) {
     const score = comp.overall_score;
     toast(`"${item.sku}" checked — ${typeof score === 'number' ? score + '/100' : 'done'}`, typeof score === 'number' && score < 70 ? 'warn' : 'ok');
     showView('products');
+    invalidateWarm();
     await renderProducts();
     renderProductDetail(res.product.id);
     refreshCounts();
@@ -3070,6 +3090,7 @@ async function submitBulk(items) {
     const res = await api('/webhooks/ingest', { method: 'POST', body: { products: items } });
     toast(`Bulk ingest accepted — ${res.created || 0} products checked`, 'ok');
     showView('products');
+    invalidateWarm();
     await renderProducts();
     refreshCounts();
   } catch (e) { toast(e.message, 'err'); }
@@ -3082,8 +3103,12 @@ async function renderChecks() {
     <div class="view-actions"><button class="btn-primary" id="btn-new-check"><span class="codicon codicon-add"></span> Check a product</button></div></div>
     <div id="checks-body" class="data-table-wrap"><div class="folder-loading">Loading…</div></div></div>`;
   root.querySelector('#btn-new-check').addEventListener('click', openProductModal);
-  let rows = [];
-  try { rows = await api('/api/checks/summary'); } catch (e) { toast(e.message, 'err'); }
+  let rows = warm.checksSummary;
+  if (rows) {
+    api('/api/checks/summary').then((r) => { warm.checksSummary = r; }).catch(() => {});
+  } else {
+    try { rows = await api('/api/checks/summary'); warm.checksSummary = rows; } catch (e) { toast(e.message, 'err'); rows = []; }
+  }
   const body = root.querySelector('#checks-body');
   if (!rows.length) {
     body.innerHTML = `<div class="empty-state">No checks yet — add a product (or paste <code>{"sku":…,"name":…}</code> into the composer) and it's evaluated against every regulation.</div>`;
@@ -3108,8 +3133,12 @@ async function renderProducts() {
     <div class="view-actions"><button class="btn-primary" id="btn-new-product"><span class="codicon codicon-add"></span> New product</button></div></div>
     <div id="products-body" class="data-table-wrap"><div class="folder-loading">Loading…</div></div></div>`;
   root.querySelector('#btn-new-product').addEventListener('click', openProductModal);
-  let prods = [];
-  try { prods = await api('/api/products?limit=300'); } catch (e) { toast(e.message, 'err'); }
+  let prods = warm.products;
+  if (prods) {
+    api('/api/products?limit=300').then((p) => { warm.products = p; }).catch(() => {});
+  } else {
+    try { prods = await api('/api/products?limit=300'); warm.products = prods; } catch (e) { toast(e.message, 'err'); prods = []; }
+  }
   const body = root.querySelector('#products-body');
   if (!prods.length) {
     body.innerHTML = `<div class="empty-state">No products yet — add one, paste product JSON into the composer, or drop a catalog file anywhere in the app.</div>`;
@@ -3154,12 +3183,12 @@ async function renderProductDetail(id) {
     ${checks.length ? complianceReportHTML(product, checks) : '<div class="empty-state">No checks on record — hit Re-check.</div>'}`;
   root.querySelector('#btn-back-prods').addEventListener('click', renderProducts);
   root.querySelector('#btn-recheck').addEventListener('click', async () => {
-    try { await api(`/api/products/${id}/check`, { method: 'POST' }); toast('Re-check complete', 'ok'); renderProductDetail(id); }
+    try { await api(`/api/products/${id}/check`, { method: 'POST' }); toast('Re-check complete', 'ok'); invalidateWarm(); renderProductDetail(id); }
     catch (e) { toast(e.message, 'err'); }
   });
   root.querySelector('#btn-del-prod').addEventListener('click', async () => {
     if (!confirm(`Delete product ${product.sku}?`)) return;
-    try { await api(`/api/products/${id}`, { method: 'DELETE' }); toast('Deleted', 'ok'); renderProducts(); refreshCounts(); }
+    try { await api(`/api/products/${id}`, { method: 'DELETE' }); toast('Deleted', 'ok'); invalidateWarm(); renderProducts(); refreshCounts(); }
     catch (e) { toast(e.message, 'err'); }
   });
 }
@@ -3370,6 +3399,7 @@ async function ingestFile(file) {
           toast('Ingest complete', 'ok');
           setTimeout(() => { bar.hidden = true; }, 2500);
           refreshCounts();
+          warmLoad();
           if (state.view === 'catalog') renderCatalog();
         } else if (j.status === 'error') {
           toast(`Ingest failed: ${j.message}`, 'err');

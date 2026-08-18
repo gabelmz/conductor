@@ -9,13 +9,13 @@
 
 /* ---------- shared meta (non-color tokens) ---------- */
 const META_DARK = {
-  opacity: { subtle: 0.08, muted: 0.16, half: 0.5, strong: 0.72, solid: 1 },
+  opacity: { subtle: 0.10, muted: 0.18, half: 0.5, strong: 0.72, solid: 1 },
   density: { scale: 1, unit: 4, controlHeight: 36, padding: 12 },
-  edges: { radius: 4, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  edges: { radius: 4, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
   highlights: {
-    topEdge: 'rgba(255,255,255,0.18)',
-    glow: 'rgba(110,86,207,0.45)',
-    selection: 'rgba(110,86,207,0.35)',
+    topEdge: 'rgba(255,255,255,0.10)',
+    glow: 'rgba(110,86,207,0.20)',
+    selection: 'rgba(110,86,207,0.24)',
   },
   elevation: {
     1: '0 1px 2px rgba(0,0,0,0.35)',
@@ -23,7 +23,7 @@ const META_DARK = {
     3: '0 24px 64px rgba(0,0,0,0.55)',
   },
   depth: { perspective: 1200, layerOffset: 8, innerShadow: 'inset 0 2px 8px rgba(0,0,0,0.45)' },
-  gloss: { intensity: 0.35, angle: 115, sheen: 'rgba(255,255,255,0.22)', blend: 'overlay' },
+  gloss: { intensity: 0.10, angle: 115, sheen: 'rgba(255,255,255,0.06)', blend: 'soft-light' },
   motion: { duration: 200, easing: 'cubic-bezier(0.2,0,0,1)' },
   blur: { backdrop: 18 },
 };
@@ -88,12 +88,12 @@ const THEME_PRESETS = {
     desc: 'Glass neutrals with Nous blue accents',
     dark: preset({
       name: 'nous', light: false,
-      bg: '#0D2F86', bg2: '#183F9A', base: '#12378F', raised: '#123A96',
-      primary: '#0053FD', secondary: '#1B45A4', success: '#55A583', warning: '#E3A008', danger: '#C0473A', info: '#6F9BA6',
-      heading: '#FFE6CB', body: '#FFE6CB', muted: '#B5C7F3', link: '#8FB8FF', code: '#D6E4FF',
-      border: '#3158AD', onPrimary: '#FFFFFF',
-      grad1: 'linear-gradient(135deg, #0053FD 0%, #8B7CFF 100%)',
-      grad2: 'radial-gradient(ellipse at top, #FFE6CB 0%, transparent 100%)',
+      bg: '#161d31', bg2: '#1d2742', base: '#1a2338', raised: '#202a42',
+      primary: '#3b6df0', secondary: '#27324f', success: '#5aa88b', warning: '#d19a3a', danger: '#c2564e', info: '#6f9ba6',
+      heading: '#e8eaf2', body: '#e3e6f0', muted: '#9aa4c4', link: '#8fb0e8', code: '#c6d0e8',
+      border: '#2c3856', onPrimary: '#FFFFFF',
+      grad1: 'linear-gradient(135deg, #3b6df0 0%, #6d5fc4 100%)',
+      grad2: 'radial-gradient(ellipse at top, rgba(120,150,220,0.30) 0%, transparent 60%)',
       codeFont: { family: '"Courier Prime", monospace', size: 13, ligatures: false },
     }),
     light: preset({
@@ -136,12 +136,12 @@ const THEME_PRESETS = {
     desc: 'Deep blue-violet with cool accents',
     dark: preset({
       name: 'midnight', light: false,
-      bg: '#08081c', bg2: '#13133a', base: '#0d0d28', raised: '#0f0f2e',
-      primary: '#8b80e8', secondary: '#1a1a4a', success: '#55A583', warning: '#E3A008', danger: '#b03060', info: '#8b80e8',
-      heading: '#ddd6ff', body: '#ddd6ff', muted: '#7c7ab0', link: '#a99eff', code: '#c4bff0',
-      border: '#1e1e52', onPrimary: '#08081c',
-      grad1: 'linear-gradient(135deg, #8b80e8 0%, #3b2f8f 100%)',
-      grad2: 'radial-gradient(ellipse at top, #8b80e8 0%, transparent 100%)',
+      bg: '#101225', bg2: '#1b1e3c', base: '#151830', raised: '#181b36',
+      primary: '#7c72d4', secondary: '#232651', success: '#55A583', warning: '#E3A008', danger: '#b03060', info: '#7c72d4',
+      heading: '#cfcae8', body: '#cdc8e6', muted: '#8b88b4', link: '#a49be0', code: '#bdb8e0',
+      border: '#272a54', onPrimary: '#101225',
+      grad1: 'linear-gradient(135deg, #7c72d4 0%, #4a3f9c 100%)',
+      grad2: 'radial-gradient(ellipse at top, rgba(124,114,212,0.30) 0%, transparent 60%)',
       codeFont: { family: '"JetBrains Mono", monospace', size: 13, ligatures: true },
     }),
     light: preset({
@@ -160,12 +160,12 @@ const THEME_PRESETS = {
     desc: 'Warm crimson and bronze — forge vibes',
     dark: preset({
       name: 'ember', light: false,
-      bg: '#160800', bg2: '#2a1408', base: '#1e0e04', raised: '#221008',
-      primary: '#d97316', secondary: '#341800', success: '#55A583', warning: '#E3A008', danger: '#c43010', info: '#d97316',
-      heading: '#ffd8b0', body: '#ffd8b0', muted: '#aa7a56', link: '#f0a050', code: '#f0c090',
-      border: '#3a1c08', onPrimary: '#160800',
-      grad1: 'linear-gradient(135deg, #d97316 0%, #7a3410 100%)',
-      grad2: 'radial-gradient(ellipse at top, #E3A008 0%, transparent 100%)',
+      bg: '#1d120a', bg2: '#2c1b10', base: '#22150c', raised: '#271810',
+      primary: '#c96a18', secondary: '#39240f', success: '#55A583', warning: '#d9a13a', danger: '#c43a20', info: '#c96a18',
+      heading: '#e8d2b8', body: '#e5cfb6', muted: '#a8866a', link: '#d8944a', code: '#d8b898',
+      border: '#3c2412', onPrimary: '#1d120a',
+      grad1: 'linear-gradient(135deg, #c96a18 0%, #8a4412 100%)',
+      grad2: 'radial-gradient(ellipse at top, rgba(201,106,24,0.28) 0%, transparent 60%)',
       codeFont: { family: '"IBM Plex Mono", monospace', size: 13, ligatures: true },
     }),
     light: preset({
@@ -184,12 +184,12 @@ const THEME_PRESETS = {
     desc: 'Clean grayscale — minimal and focused',
     dark: preset({
       name: 'mono', light: false,
-      bg: '#0e0e0e', bg2: '#1e1e1e', base: '#141414', raised: '#181818',
-      primary: '#9a9a9a', secondary: '#262626', success: '#55A583', warning: '#C9A24B', danger: '#a84040', info: '#9a9a9a',
-      heading: '#eaeaea', body: '#eaeaea', muted: '#808080', link: '#b8b8b8', code: '#d8d8d8',
-      border: '#2a2a2a', onPrimary: '#0e0e0e',
-      grad1: 'linear-gradient(135deg, #9a9a9a 0%, #3a3a3a 100%)',
-      grad2: 'radial-gradient(ellipse at top, #444 0%, transparent 100%)',
+      bg: '#161616', bg2: '#242424', base: '#1b1b1b', raised: '#202020',
+      primary: '#a3a3a3', secondary: '#2b2b2b', success: '#55A583', warning: '#C9A24B', danger: '#a84040', info: '#a3a3a3',
+      heading: '#ececec', body: '#ececec', muted: '#8a8a8a', link: '#bfbfbf', code: '#dcdcdc',
+      border: '#303030', onPrimary: '#161616',
+      grad1: 'linear-gradient(135deg, #a3a3a3 0%, #404040 100%)',
+      grad2: 'radial-gradient(ellipse at top, rgba(90,90,90,0.35) 0%, transparent 60%)',
       codeFont: CODE_FONT_DEFAULT,
     }),
     light: preset({

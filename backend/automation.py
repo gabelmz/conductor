@@ -6,7 +6,7 @@ Covers the four pillars of the BPA Specialist role:
      ROI quantification (annual cost, automation score), and
      redesign-vs-automate recommendations.
   2. Automation Infrastructure   — /api/automations           trigger → condition →
-     action chains across Asana / Slack / Google Workspace / HubSpot /
+     action chains across Asana / Google Workspace / HubSpot /
      Looker Studio / Zapier / Make.com; /api/integrations connector
      registry; /webhooks/automation/{source} inbound event receiver.
   3. AI Integration              — /api/ai/*                  LLM workflows:
@@ -16,7 +16,7 @@ Covers the four pillars of the BPA Specialist role:
      training / governance markdown docs with versioning.
 
 Execution is honest about what is real: actions run live when the required
-credentials exist (Asana PAT, Slack webhook URL, AI provider), otherwise they
+credentials exist (Asana PAT, AI provider), otherwise they
 are executed as *simulated* steps and logged as such.
 """
 from __future__ import annotations
@@ -114,9 +114,9 @@ CREATE TABLE IF NOT EXISTS events (
 """
 
 PROCESS_STATUSES = ("discovered", "scoping", "building", "shipped", "adopted", "deferred")
-ACTION_TYPES = ("asana_create_task", "slack_message", "sheets_append", "gmail_send",
+ACTION_TYPES = ("asana_create_task", "sheets_append", "gmail_send",
                 "hubspot_update", "webhook_out", "ai_run", "log_event")
-TRIGGER_SOURCES = ("asana", "slack", "webhook", "sheets", "forms", "schedule", "manual")
+TRIGGER_SOURCES = ("asana", "webhook", "sheets", "forms", "schedule", "manual")
 CONDITION_OPS = ("eq", "neq", "contains", "exists")
 
 SECRET_KEY_PARTS = ("token", "secret", "password", "api_key", "apikey", "pat")
@@ -128,9 +128,6 @@ INTEGRATIONS: list[dict[str, Any]] = [
     {"key": "asana", "name": "Asana", "kind": "api",
      "desc": "Project & task sync — triggers on task completion, creates tasks with pre-populated inputs.",
      "fields": [{"key": "pat", "label": "Personal Access Token", "type": "secret", "placeholder": "2/…"}]},
-    {"key": "slack", "name": "Slack", "kind": "webhook",
-     "desc": "Team notifications — posts to channels via incoming webhooks.",
-     "fields": [{"key": "webhook_url", "label": "Incoming Webhook URL", "type": "url", "placeholder": "https://hooks.slack.com/services/…"}]},
     {"key": "google_sheets", "name": "Google Sheets", "kind": "connector",
      "desc": "Append rows, log automation runs, keep data in sync with the spreadsheet layer.",
      "fields": [{"key": "sheet_id", "label": "Spreadsheet ID", "type": "text", "placeholder": "1A2b3C…"}]},
@@ -366,25 +363,6 @@ def execute_action(action: dict, ctx: dict) -> dict:
         return {"type": atype, "executed": "simulated", "ok": True,
                 "detail": f"Project '{target}' not found in local Asana mirror — run an Asana sync first, or paste the project GID."}
 
-    if atype == "slack_message":
-        url = _get_integration_config("slack").get("webhook_url", "")
-        text = _render(payload.get("text") or "", ctx)
-        channel = payload.get("channel") or ""
-        if url:
-            req = urllib.request.Request(url, data=json.dumps(
-                {"text": f"{('[' + channel + '] ') if channel else ''}{text}"}).encode(),
-                headers={"Content-Type": "application/json"}, method="POST")
-            try:
-                with urllib.request.urlopen(req, timeout=15) as r:
-                    body = r.read().decode("utf-8", errors="replace")
-                return {"type": atype, "executed": "live", "ok": body == "ok",
-                        "detail": f"Posted to Slack{(' ' + channel) if channel else ''}: {text[:80]}"}
-            except urllib.error.HTTPError as exc:
-                return {"type": atype, "executed": "live", "ok": False,
-                        "detail": f"Slack webhook {exc.code}: {exc.read().decode('utf-8', errors='replace')[:200]}"}
-        return {"type": atype, "executed": "simulated", "ok": True,
-                "detail": f"No Slack webhook URL configured — would post to{(' ' + channel) if channel else ' #general'}: '{text[:80]}'"}
-
     if atype == "ai_run":
         workflow = payload.get("workflow") or payload.get("name") or ""
         wf = AI_WORKFLOWS.get(workflow)
@@ -613,7 +591,6 @@ def seed() -> None:
                     {"type": "asana_create_task", "target": "Catalog Ops",
                      "payload": {"name": "Catalog: {task_name} ready for intake",
                                  "notes": "Auto-created by Conductor.\nSupply Chain task completed: {task_name}\nLink: {task_url}\n\nAll required inputs are pre-populated below."}},
-                    {"type": "slack_message", "payload": {"channel": "#catalog", "text": "Supply Chain → Catalog handoff: '{task_name}' completed"}},
                     {"type": "log_event"},
                 ],
             },
@@ -661,7 +638,7 @@ def seed() -> None:
                     "## Purpose\nProve a Conductor automation works before enabling it in production.\n\n"
                     "## Steps\n"
                     "1. Open **Automations** and pick the automation under test.\n"
-                    "2. Confirm the trigger source matches where the real event will come from (Asana, Slack, webhook, form).\n"
+                    "2. Confirm the trigger source matches where the real event will come from (Asana, webhook, form).\n"
                     "3. Click **Run now** and paste a realistic sample payload (same shape as production).\n"
                     "4. Check each step's badge: `live` means it executed for real, `simulated` means credentials are missing or the target is not wired.\n"
                     "5. Verify the output in the target system (task created, message posted, row appended).\n"
@@ -941,7 +918,7 @@ def test_integration(key: str):
         except urllib.error.HTTPError as exc:
             return {"ok": False, "mode": "live", "detail": f"Asana API {exc.code}: {exc.read().decode('utf-8', errors='replace')[:200]}"}
 
-    if key in ("slack", "zapier", "make"):
+    if key in ("zapier", "make"):
         url = cfg.get("webhook_url", "")
         if not url:
             return {"ok": False, "mode": "unconfigured", "detail": "No webhook URL configured."}
