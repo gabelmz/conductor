@@ -42,18 +42,24 @@ from hub import init_hub_db
 from keepa import init_keepa_db
 from people import init_people_db
 from localsources import init_local_sources_db
+from productpipeline import init_product_pipeline_db
+from insights import init_insights_db
+from attributeaudit import init_attribute_audit_db
 
 init_hub_db()
 init_keepa_db()
 init_people_db()
 init_local_sources_db()
+init_product_pipeline_db()
+init_insights_db()
+init_attribute_audit_db()
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.3.0",
+    version="1.4.0",
 )
 
 app.add_middleware(
@@ -95,7 +101,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "1.3.0",
+        "version": "1.4.0",
         "products": storage.count_products(),
     }
 
@@ -684,7 +690,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "1.3.0",
+        "version": "1.4.0",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,
@@ -761,6 +767,10 @@ from keepa import router as keepa_router
 from people import router as people_router
 from bulkimport import router as bulkimport_router
 from localsources import router as localsources_router
+from productpipeline import router as productpipeline_router
+from insights import router as insights_router
+from attributeaudit import router as attributeaudit_router
+from hf import router as hf_router
 
 app.include_router(plugins_router)
 app.include_router(hub_router)
@@ -775,6 +785,10 @@ app.include_router(keepa_router)
 app.include_router(people_router)
 app.include_router(bulkimport_router)
 app.include_router(localsources_router)
+app.include_router(productpipeline_router)
+app.include_router(insights_router)
+app.include_router(attributeaudit_router)
+app.include_router(hf_router)
 
 
 # --------------------------------------------------------------------------

@@ -144,6 +144,7 @@ const VIEW_RENDERERS = {
   data: () => renderData(),
   import: () => window.ConductorBulkImport.render(),
   sources: () => window.ConductorLocalSources.render(),
+  insights: () => window.ConductorInsights.render(),
   flatfile: () => renderFlatFile(),
   svl: () => renderSvl(),
   brandcompare: () => renderBrandCompare(),
@@ -166,6 +167,7 @@ const VIEW_RENDERERS = {
   runbooks: () => renderModuleStub('runbooks'),
   policies: () => renderModuleStub('policies'),
   features: () => renderFeatureStudio(),
+  amazon: () => renderAmazon(),
 };
 
 function renderView(name) {
@@ -1625,6 +1627,56 @@ async function renderSettingsTab(tab) {
     return;
   }
 
+  if (tab === 'spapi') {
+    let st = {};
+    try { st = await api('/api/productpipeline/status'); } catch { /* */ }
+    const hasKey = !!st.has_key;
+    box.innerHTML = `
+      <div class="settings-pane active">
+        <div class="settings-section">
+          <div class="settings-title"><span class="codicon codicon-git-merge"></span> Amazon SP-API</div>
+          <div class="settings-note">Powers the Product Pipelines view via <code>getDefinitionsProductType</code>. LWA auth (refresh_token + client_id + client_secret) or a direct access_token. Without credentials, fetches fall back to bundled sample definitions. Same store as the Integrations page.</div>
+          <div class="field-row">
+            <label class="field"><span>Refresh token ${hasKey ? '<span class="pill-int pill-int-configured">configured</span>' : ''}</span>
+              <input id="s-spapi-refresh" type="password" placeholder="${hasKey ? (st.refresh_token_masked || '•••••• (saved)') + ' (leave blank to keep)' : 'LWA refresh_token'}" autocomplete="off" /></label>
+            <label class="field"><span>Client ID</span><input id="s-spapi-client" type="password" placeholder="${hasKey ? (st.client_id_masked || '•••••• (saved)') + ' (leave blank to keep)' : 'LWA client_id'}" autocomplete="off" /></label>
+            <label class="field"><span>Client secret</span><input id="s-spapi-secret" type="password" placeholder="LWA client_secret" autocomplete="off" /></label>
+          </div>
+          <div class="field-row">
+            <label class="field"><span>Direct access token (optional)</span><input id="s-spapi-token" type="password" placeholder="x-amz-access-token" autocomplete="off" /></label>
+            <label class="field"><span>Region</span>
+              <select id="s-spapi-region">${(st.regions || []).map((r) => `<option value="${esc(r.id)}" ${st.region === r.id ? 'selected' : ''}>${esc(r.id.toUpperCase())} — ${esc(r.host)}</option>`).join('')}</select></label>
+          </div>
+          <div class="settings-actions">
+            <button class="btn-primary" id="btn-save-spapi">Save SP-API credentials</button>
+            <button class="btn-secondary" id="btn-open-pipelines"><span class="codicon codicon-git-merge"></span> Open Product Pipelines</button>
+          </div>
+        </div>
+      </div>`;
+    box.querySelector('#btn-save-spapi').addEventListener('click', async () => {
+      const body = {};
+      const r = box.querySelector('#s-spapi-refresh').value.trim();
+      const c = box.querySelector('#s-spapi-client').value.trim();
+      const s = box.querySelector('#s-spapi-secret').value.trim();
+      const t = box.querySelector('#s-spapi-token').value.trim();
+      if (r) body.refresh_token = r;
+      if (c) body.client_id = c;
+      if (s) body.client_secret = s;
+      if (t) body.access_token = t;
+      body.region = box.querySelector('#s-spapi-region').value;
+      try {
+        await api('/api/productpipeline/config', { method: 'POST', body });
+        toast('SP-API credentials saved', 'ok');
+        renderSettingsTab('spapi');
+      } catch (e) { toast(e.message, 'err'); }
+    });
+    box.querySelector('#btn-open-pipelines').addEventListener('click', () => {
+      $('#settings-backdrop').hidden = true;
+      showView('productpipeline');
+    });
+    return;
+  }
+
   if (tab === 'about') {
     let a = {};
     try { a = await api('/api/about'); } catch { /* */ }
@@ -1727,7 +1779,7 @@ async function refreshStatusbar() {
     $('#status-tokens').textContent = `${fmtNum((tu.total_tokens || 0) + (tu.input_tokens || 0) + (tu.output_tokens || 0))} tok`;
     const as = (st.connections && st.connections.asana) || {};
     $('#status-conn').textContent = `asana ${fmtNum(as.tasks || 0)} · ${st.automations !== undefined ? fmtNum(state.stats.automations ? (state.stats.automations.total || 0) : 0) : ''} automations · db ${(st.db_size || 0) / 1024 / 1024 >= 1 ? (st.db_size / 1024 / 1024).toFixed(1) + 'MB' : fmtNum(st.db_size) + 'B'}`;
-    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.3.0'}`;
+    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.4.0'}`;
   } catch { /* statusbar is best-effort */ }
 }
 
@@ -1847,23 +1899,21 @@ function wireUpdates() {
   }
 }
 
-/* ------------------------------------------------------- warm data cache
-   Preloads catalog + compliance data once so Products/Compliance pages paint
-   instantly after a product upload (cache-first, refreshed after mutations). */
-const warm = { products: null, checksSummary: null };
-
-async function warmLoad() {
-  try {
-    const [products, checksSummary] = await Promise.all([
-      api('/api/products?limit=300'),
-      api('/api/checks/summary'),
-    ]);
-    warm.products = products;
-    warm.checksSummary = checksSummary;
-  } catch (e) { /* non-fatal — views fall back to their own fetch */ }
+/* ------------------------------------------------------- centralized data store
+   One canonical data set per datatype (products, checks, people). Views read
+   through ConductorData.get() and mutations call invalidateWarm() so a change
+   anywhere is instantly visible on every page. See frontend/store.js. */
+function warmLoad() {
+  return (window.ConductorData || { preload: () => Promise.resolve() })
+    .preload(['products', 'checks', 'people']);
 }
 
-function invalidateWarm() { warm.products = null; warm.checksSummary = null; }
+function invalidateWarm() {
+  if (!window.ConductorData) return;
+  window.ConductorData.invalidate('products');
+  window.ConductorData.invalidate('checks');
+  window.ConductorData.invalidate('people');
+}
 
 async function boot() {
   window.__sidebarActiveView = state.view;
@@ -3127,12 +3177,8 @@ async function renderChecks() {
     <div class="view-actions"><button class="btn-primary" id="btn-new-check"><span class="codicon codicon-add"></span> Check a product</button></div></div>
     <div id="checks-body" class="data-table-wrap"><div class="folder-loading">Loading…</div></div></div>`;
   root.querySelector('#btn-new-check').addEventListener('click', openProductModal);
-  let rows = warm.checksSummary;
-  if (rows) {
-    api('/api/checks/summary').then((r) => { warm.checksSummary = r; }).catch(() => {});
-  } else {
-    try { rows = await api('/api/checks/summary'); warm.checksSummary = rows; } catch (e) { toast(e.message, 'err'); rows = []; }
-  }
+  let rows;
+  try { rows = await window.ConductorData.get('checks'); } catch (e) { toast(e.message, 'err'); rows = []; }
   const body = root.querySelector('#checks-body');
   if (!rows.length) {
     body.innerHTML = `<div class="empty-state">No checks yet — add a product (or paste <code>{"sku":…,"name":…}</code> into the composer) and it's evaluated against every regulation.</div>`;
@@ -3157,12 +3203,8 @@ async function renderProducts() {
     <div class="view-actions"><button class="btn-primary" id="btn-new-product"><span class="codicon codicon-add"></span> New product</button></div></div>
     <div id="products-body" class="data-table-wrap"><div class="folder-loading">Loading…</div></div></div>`;
   root.querySelector('#btn-new-product').addEventListener('click', openProductModal);
-  let prods = warm.products;
-  if (prods) {
-    api('/api/products?limit=300').then((p) => { warm.products = p; }).catch(() => {});
-  } else {
-    try { prods = await api('/api/products?limit=300'); warm.products = prods; } catch (e) { toast(e.message, 'err'); prods = []; }
-  }
+  let prods;
+  try { prods = await window.ConductorData.get('products'); } catch (e) { toast(e.message, 'err'); prods = []; }
   const body = root.querySelector('#products-body');
   if (!prods.length) {
     body.innerHTML = `<div class="empty-state">No products yet — add one, paste product JSON into the composer, or drop a catalog file anywhere in the app.</div>`;
@@ -4842,6 +4884,49 @@ function renderModuleStub(view) {
   if (rel) rel.addEventListener('click', () => showView(rel.dataset.rel));
 }
 
+function renderAmazon() {
+  $('#view-root').innerHTML = `
+    <div class="view">
+      <div class="view-header"><div><div class="view-title">Amazon</div><div class="view-sub">Amazon platform hub — the marketplace integrations and tools for listing, data, and operations.</div></div></div>
+      <div class="home-cards" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <div class="home-card clickable" data-nav="productpipeline">
+          <div class="home-card-label"><span class="codicon codicon-git-merge"></span> SP-API</div>
+          <div class="home-card-val" style="font-size:0.8125rem">Product Pipelines</div>
+          <div class="muted" style="font-size:0.71875rem">getDefinitionsProductType → required attributes, flat files, guidelines, catalog readiness.</div>
+        </div>
+        <div class="home-card clickable" data-nav="keepa">
+          <div class="home-card-label"><span class="codicon codicon-graph-line"></span> Keepa</div>
+          <div class="home-card-val" style="font-size:0.8125rem">Live product data</div>
+          <div class="muted" style="font-size:0.71875rem">Price, sales rank, rating, images by ASIN.</div>
+        </div>
+        <div class="home-card clickable" data-nav="flatfile">
+          <div class="home-card-label"><span class="codicon codicon-table"></span> Flat Files</div>
+          <div class="home-card-val" style="font-size:0.8125rem">Templates &amp; CSVs</div>
+          <div class="muted" style="font-size:0.71875rem">Per-product-type flat-file templates.</div>
+        </div>
+        <div class="home-card clickable" data-nav="variation">
+          <div class="home-card-label"><span class="codicon codicon-versions"></span> Variations</div>
+          <div class="home-card-val" style="font-size:0.8125rem">Family validator</div>
+          <div class="muted" style="font-size:0.71875rem">Validate variation families before submission.</div>
+        </div>
+        <div class="home-card clickable" data-nav="fba">
+          <div class="home-card-label"><span class="codicon codicon-package"></span> FBA</div>
+          <div class="home-card-val" style="font-size:0.8125rem">Fulfillment</div>
+          <div class="muted" style="font-size:0.71875rem">Shipments, inventory, and prep.</div>
+        </div>
+        <div class="home-card clickable" data-nav="listings">
+          <div class="home-card-label"><span class="codicon codicon-list-unordered"></span> Listings</div>
+          <div class="home-card-val" style="font-size:0.8125rem">Live listings</div>
+          <div class="muted" style="font-size:0.71875rem">Listing quality across channels.</div>
+        </div>
+      </div>
+      <div class="settings-note" style="margin-top:1rem">SP-API credentials can be set here, on the <b>Integrations</b> page, or in <b>Settings → SP-API</b> — all three share the same credential store.</div>
+    </div>`;
+  $('#view-root').querySelectorAll('.home-card[data-nav]').forEach((c) => {
+    c.addEventListener('click', () => showView(c.dataset.nav));
+  });
+}
+
 function renderDeveloper() {
   $('#view-root').innerHTML = `
     <div class="view">
@@ -5479,6 +5564,7 @@ function wireKeepaImport(container) {
       if (r.imported.includes(asin)) toast(`${asin} imported to catalog`, 'ok');
       else if (r.updated.includes(asin)) toast(`${asin} already in catalog — attributes updated`, 'ok');
       else toast(`${asin} not cached — look it up first`, 'warn');
+      invalidateWarm();
       refreshCounts();
     } catch (e) { toast(e.message, 'err'); }
     b.disabled = false;

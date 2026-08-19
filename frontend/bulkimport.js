@@ -186,6 +186,12 @@ window.ConductorBulkImport = {
         const res = await api('/api/import', { method: 'POST', body: { target: impSelectedTarget, mode: 'auto', data } });
         renderResult(res);
         toast(`Imported ${res.created}${res.skipped ? ', skipped ' + res.skipped : ''}${(res.errors || []).length ? ' with errors' : ''}`, (res.errors || []).length ? 'warn' : 'ok');
+        // Keep the shared store in sync — the imported datatype now has new rows.
+        if (window.ConductorData) {
+          const key = impSelectedTarget === 'workflows' ? 'automations' : impSelectedTarget;
+          window.ConductorData.invalidate(key);
+          if (impSelectedTarget === 'products') window.ConductorData.invalidate('checks');
+        }
         if (typeof refreshCounts === 'function') refreshCounts();
       } catch (e) { toast(e.message, 'err'); }
       runBtn.disabled = false;

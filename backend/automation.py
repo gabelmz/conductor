@@ -128,6 +128,15 @@ INTEGRATIONS: list[dict[str, Any]] = [
     {"key": "asana", "name": "Asana", "kind": "api",
      "desc": "Project & task sync — triggers on task completion, creates tasks with pre-populated inputs.",
      "fields": [{"key": "pat", "label": "Personal Access Token", "type": "secret", "placeholder": "2/…"}]},
+    {"key": "spapi", "name": "Amazon SP-API", "kind": "api",
+     "desc": "Product type definitions (getDefinitionsProductType) → Product Pipelines. LWA auth: refresh_token + client_id + client_secret (or a direct access_token).",
+     "fields": [
+         {"key": "refresh_token", "label": "Refresh Token", "type": "secret", "placeholder": "LWA refresh_token"},
+         {"key": "client_id", "label": "Client ID", "type": "secret", "placeholder": "LWA client_id"},
+         {"key": "client_secret", "label": "Client Secret", "type": "secret", "placeholder": "LWA client_secret"},
+         {"key": "access_token", "label": "Direct Access Token (optional)", "type": "secret", "placeholder": "x-amz-access-token"},
+         {"key": "region", "label": "Region", "type": "text", "placeholder": "na | eu | fe"},
+     ]},
     {"key": "google_sheets", "name": "Google Sheets", "kind": "connector",
      "desc": "Append rows, log automation runs, keep data in sync with the spreadsheet layer.",
      "fields": [{"key": "sheet_id", "label": "Spreadsheet ID", "type": "text", "placeholder": "1A2b3C…"}]},
@@ -871,6 +880,12 @@ def list_integrations():
                 status = "configured" if asana_sync.has_credentials() else (status if cfg else "unconfigured")
             except Exception:
                 pass
+        if it["key"] == "spapi":
+            try:
+                import productpipeline
+                status = "configured" if productpipeline.get_config()["has_key"] else (status if cfg else "unconfigured")
+            except Exception:
+                pass
         out.append({**it, "status": status, "config": _mask(cfg), "updated_at": row.get("updated_at", "")})
     return out
 
@@ -889,7 +904,21 @@ def save_integration(key: str, body: dict):
             asana_sync.save_config(pat=cfg["pat"])
         except Exception:
             pass
+    # SP-API credentials flow into the product-pipeline config (data/spapi.json).
+    if key == "spapi":
+        try:
+            import productpipeline
+            productpipeline.apply_config(cfg)
+        except Exception:
+            pass
     status = "configured" if cfg else "unconfigured"
+    if key == "spapi":
+        try:
+            import productpipeline
+            # reflect real credential readiness, not just "a field was set"
+            status = "configured" if productpipeline.get_config()["has_key"] else "unconfigured"
+        except Exception:
+            pass
     conn = storage._conn()
     conn.execute(
         "INSERT INTO integration_settings (key, name, kind, status, config, updated_at) VALUES (?,?,?,?,?,?) "
@@ -917,6 +946,13 @@ def test_integration(key: str):
             return {"ok": True, "mode": "live", "detail": f"Connected as {me.get('name')} ({me.get('email')})."}
         except urllib.error.HTTPError as exc:
             return {"ok": False, "mode": "live", "detail": f"Asana API {exc.code}: {exc.read().decode('utf-8', errors='replace')[:200]}"}
+
+    if key == "spapi":
+        try:
+            import productpipeline
+            return productpipeline.test_connection()
+        except Exception as exc:
+            return {"ok": False, "mode": "live", "detail": str(exc)}
 
     if key in ("zapier", "make"):
         url = cfg.get("webhook_url", "")

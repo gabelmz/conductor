@@ -45,13 +45,14 @@ window.ConductorPeople = {
       try {
         await api('/api/people', { method: 'POST', body });
         toast('Person added', 'ok');
+        if (window.ConductorData) window.ConductorData.invalidate('people');
         if (typeof refreshCounts === 'function') refreshCounts();
         window.ConductorPeople.render();
       } catch (err) { toast(err.message, 'err'); }
     });
 
     let people = [];
-    try { people = await api('/api/people'); } catch (e) { toast(e.message, 'err'); }
+    try { people = await window.ConductorData.get('people'); } catch (e) { toast(e.message, 'err'); }
     const wrap = root.querySelector('#people-body');
     if (!people.length) {
       wrap.innerHTML = `<div class="empty-state">No people yet — add one above, or bulk-import a roster from Bulk Import.</div>`;
@@ -73,6 +74,7 @@ window.ConductorPeople = {
       try {
         await api(`/api/people/${b.dataset.id}`, { method: 'DELETE' });
         toast('Person removed', 'ok');
+        if (window.ConductorData) window.ConductorData.invalidate('people');
         if (typeof refreshCounts === 'function') refreshCounts();
         window.ConductorPeople.render();
       } catch (err) { toast(err.message, 'err'); }
