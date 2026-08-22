@@ -39,7 +39,8 @@ def init_db() -> None:
             attributes TEXT DEFAULT '{}',
             source TEXT DEFAULT 'manual',
             file_id INTEGER,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS checks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -273,7 +274,10 @@ def init_db() -> None:
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(products)").fetchall()]
     if "file_id" not in cols:
         conn.execute("ALTER TABLE products ADD COLUMN file_id INTEGER")
-        conn.commit()
+    if "updated_at" not in cols:
+        conn.execute("ALTER TABLE products ADD COLUMN updated_at TEXT")
+        conn.execute("UPDATE products SET updated_at=created_at WHERE updated_at IS NULL OR updated_at='' ")
+    conn.commit()
 
 
 def now_iso() -> str:
@@ -287,10 +291,11 @@ def create_product(sku: str, name: str, category: str = "general",
                    market: str = "US", attributes: dict | None = None,
                    source: str = "manual", file_id: int | None = None) -> int:
     conn = _conn()
+    stamp = now_iso()
     cur = conn.execute(
-        "INSERT INTO products (sku, name, category, market, attributes, source, file_id, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (sku, name, category, market, json.dumps(attributes or {}), source, file_id, now_iso()),
+        "INSERT INTO products (sku, name, category, market, attributes, source, file_id, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (sku, name, category, market, json.dumps(attributes or {}), source, file_id, stamp, stamp),
     )
     conn.commit()
     return cur.lastrowid
@@ -309,6 +314,8 @@ def update_product(product_id: int, **fields) -> bool:
         vals.append(v)
     if not sets:
         return False
+    sets.append("updated_at=?")
+    vals.append(now_iso())
     vals.append(product_id)
     conn = _conn()
     conn.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=?", vals)

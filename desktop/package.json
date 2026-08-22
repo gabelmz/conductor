@@ -1,7 +1,7 @@
 {
   "name": "conductor",
   "productName": "Conductor",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "description": "Conductor — business process automation hub with AI workflows (desktop)",
   "main": "main.cjs",
@@ -15,11 +15,14 @@
     "health": "node ../scripts/conductor-cli.mjs health",
     "doctor": "node ../scripts/conductor-cli.mjs doctor",
     "checksums": "node ../scripts/conductor-cli.mjs checksums",
-    "release": "node ../scripts/conductor-cli.mjs release"
+    "release": "node ../scripts/conductor-cli.mjs release",
+    "bundle:asana-mcp": "esbuild node_modules/asana-mcp/build/bin.js --bundle --platform=node --format=cjs --target=node20 --outfile=../backend/asana_mcp_server.cjs"
   },
   "devDependencies": {
+    "asana-mcp": "1.0.0",
     "electron": "^43.4.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "esbuild": "0.25.11"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
@@ -47,12 +50,18 @@
         "to": "backend",
         "filter": [
           "**/*",
-          "!**/__pycache__/**"
+          "!**/__pycache__/**",
+          "!context_menus.py"
         ]
       },
       {
         "from": "../frontend",
-        "to": "frontend"
+        "to": "frontend",
+        "filter": [
+          "**/*",
+          "!commands.js",
+          "!context-menu.js"
+        ]
       },
       {
         "from": "../.venv",

@@ -1,0 +1,6 @@
+fastapi>=0.135.0
+uvicorn>=0.41.0
+python-multipart>=0.0.22
+requests>=2.32.0
+openpyxl>=3.1.5
+mcp>=2.0.0

@@ -74,6 +74,7 @@ const NAV_ITEMS = {
   policies:        { label: 'Policies',           icon: 'codicon-library',            view: 'policies' },
   // Platform
   integrations:    { label: 'Integrations',       icon: 'codicon-plug',               view: 'integrations' },
+  mcpsync:         { label: 'Sync Center',        icon: 'codicon-server-process',     view: 'mcpsync' },
   events:          { label: 'Events',             icon: 'codicon-radio-tower',        view: 'events',   count: 'events' },
   requests:        { label: 'HTTP',               icon: 'codicon-arrow-swap',         view: 'requests', count: 'requests' },
   developer:       { label: 'Developer',          icon: 'codicon-wrench',             view: 'developer' },
@@ -94,14 +95,14 @@ const SIDEBAR_PRESETS = {
       { label: 'Automation',  items: ['automations', 'workflowbuilder', 'processes', 'bernie'] },
       { label: 'AI',          items: ['aichat', 'models', 'agents', 'aiworkflows', 'agentbuilder', 'features'] },
       { label: 'Knowledge',   items: ['sops', 'runbooks', 'policies'] },
-      { label: 'Platform',    items: ['integrations', 'events', 'requests', 'developer', 'asana'] },
+      { label: 'Platform',    items: ['integrations', 'mcpsync', 'events', 'requests', 'developer', 'asana'] },
     ],
   },
   core: {
     label: 'Core (Business)',
     desc: 'Business-unit lens — Core, Departments, Operations, marketplaces.',
     sections: [
-      { label: 'Core',        items: ['chat', 'models', 'dashboard', 'workflows', 'insights', 'import', 'sources'] },
+      { label: 'Core',        items: ['chat', 'models', 'dashboard', 'workflows', 'insights', 'import', 'sources', 'mcpsync'] },
       { label: 'Departments', items: ['compliance', 'content', 'listings', 'case', 'fba', 'customerservice'] },
       { label: 'Operations',  items: ['products', 'brands', 'people', 'sops'] },
       { label: 'Platforms',   items: ['amazon', 'spapi', 'walmart', 'tiktok', 'target', 'spp', 'coastal', 'agency'] },
@@ -115,7 +116,7 @@ const SIDEBAR_PRESETS = {
       { label: 'Automation', items: ['automations', 'workflowbuilder', 'processes', 'bernie'] },
       { label: 'AI',         items: ['aichat', 'models', 'agents', 'agentbuilder', 'features'] },
       { label: 'Knowledge',  items: ['sops', 'runbooks', 'policies'] },
-      { label: 'Platform',   items: ['integrations', 'events', 'requests', 'developer'] },
+      { label: 'Platform',   items: ['integrations', 'mcpsync', 'events', 'requests', 'developer'] },
     ],
   },
   classic: {
@@ -125,7 +126,7 @@ const SIDEBAR_PRESETS = {
       { label: 'Main',         items: ['chat', 'dashboard', 'models', 'insights'] },
       { label: 'Operations',   items: ['compliance', 'products', 'ingest', 'agents', 'tasks', 'regs', 'variations'] },
       { label: 'Automate',     items: ['processes', 'automations', 'aiworkflows', 'sops', 'bernie'] },
-      { label: 'Integrations', items: ['integrations', 'asana', 'events'] },
+      { label: 'Integrations', items: ['integrations', 'mcpsync', 'asana', 'events'] },
       { label: 'System',       items: ['requests'] },
     ],
   },
@@ -143,7 +144,14 @@ function sidebarDefaultConfig() {
 function loadSidebarConfig() {
   try {
     const c = JSON.parse(localStorage.getItem(SIDEBAR_KEY) || 'null');
-    if (c && Array.isArray(c.sections)) return c;
+    if (c && Array.isArray(c.sections)) {
+      const hasSync = c.sections.some((sec) => Array.isArray(sec.items) && sec.items.includes('mcpsync'));
+      if (!hasSync && c.sections[0] && Array.isArray(c.sections[0].items)) {
+        c.sections[0].items.push('mcpsync');
+        localStorage.setItem(SIDEBAR_KEY, JSON.stringify(c));
+      }
+      return c;
+    }
   } catch { /* fall through */ }
   return sidebarDefaultConfig();
 }

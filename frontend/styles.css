@@ -2461,3 +2461,45 @@ body.split-mode #view-root {
 .pill-int-aa-conflict { background: color-mix(in srgb, var(--red, #E5484D) 18%, transparent); color: var(--red, #E5484D); }
 .pill-int-aa-warn { background: color-mix(in srgb, var(--yellow, #F5A524) 18%, transparent); color: var(--yellow, #F5A524); }
 .pill-int-aa-ok { background: color-mix(in srgb, var(--green, #30A46C) 18%, transparent); color: var(--green, #30A46C); }
+
+/* ==========================================================================
+   MCP & Sync Hub — flat, angular integration control plane
+   ========================================================================== */
+.ms-view { max-width: 1180px; }
+.ms-header { align-items: flex-start; }
+.ms-eyebrow { color: var(--t-function-primary, #0053fd); font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin-bottom: .25rem; }
+.ms-section { border: 1px solid var(--sidebar-border); border-radius: 4px; background: var(--card); padding: .9rem; margin: .75rem 0; }
+.ms-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: .7rem; }
+.ms-section-head h2 { margin: 0; color: var(--fg-strong); font-size: .92rem; font-weight: 800; }
+.ms-section-head p { margin: .15rem 0 0; color: var(--muted-fg); font-size: .72rem; }
+.ms-count, .ms-chip, .ms-status { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--sidebar-border); border-radius: 3px; padding: .18rem .42rem; font-size: .65rem; font-weight: 750; text-transform: uppercase; }
+.ms-status i { width: 6px; height: 6px; background: currentColor; }
+.ms-status-ready { color: var(--green, #30a46c); } .ms-status-error { color: var(--red, #e5484d); } .ms-status-busy { color: var(--yellow, #f5a524); } .ms-status-idle { color: var(--muted-fg); }
+.ms-server-list { display: grid; gap: .5rem; }
+.ms-server { display: grid; grid-template-columns: 32px minmax(0,1fr) auto; align-items: center; gap: .65rem; padding: .65rem; border: 1px solid var(--sidebar-border); border-radius: 4px; background: color-mix(in srgb, var(--midground) 16%, transparent); }
+.ms-server-icon, .ms-sync-icon { display: grid; place-items: center; width: 32px; height: 32px; color: var(--t-function-primary, #0053fd); border: 1px solid currentColor; border-radius: 3px; }
+.ms-server-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; }
+.ms-server-name { color: var(--fg-strong); font-size: .8rem; }
+.ms-server-detail, .ms-server-note { color: var(--muted-fg); font: .68rem var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: .2rem; }
+.ms-server-actions, .ms-sync-actions, .ms-config-actions { display: flex; align-items: center; gap: .35rem; }
+.ms-icon-btn { display: inline-flex; align-items: center; gap: .28rem; } .ms-danger { color: var(--red, #e5484d); }
+.ms-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: .3rem; min-height: 72px; color: var(--muted-fg); border: 1px dashed var(--sidebar-border); }
+.ms-empty-compact { min-height: 44px; flex-direction: row; }
+.ms-add { margin-top: .65rem; border-top: 1px solid var(--sidebar-border); padding-top: .65rem; }
+.ms-add summary { cursor: pointer; color: var(--fg-strong); font-size: .75rem; font-weight: 800; }
+.ms-add summary span { color: var(--muted-fg); font-weight: 500; margin-left: .35rem; }
+.ms-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .55rem; margin-top: .6rem; }
+.ms-form-foot { display: flex; justify-content: space-between; align-items: center; gap: .8rem; margin-top: .55rem; }
+.ms-form-foot p { margin: 0; color: var(--muted-fg); font-size: .66rem; }
+.ms-supabase-form { display: grid; grid-template-columns: 1.3fr 1.2fr .55fr; gap: .55rem; align-items: end; }
+.ms-config-actions { grid-column: 1 / -1; justify-content: flex-end; }
+.ms-config-actions > span { margin-right: auto; color: var(--muted-fg); font-size: .68rem; }
+.ms-sync-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .55rem; }
+.ms-sync-card { display: grid; grid-template-columns: 32px minmax(0,1fr) auto; gap: .65rem; align-items: center; border: 1px solid var(--sidebar-border); border-radius: 4px; padding: .7rem; }
+.ms-sync-copy { display: flex; flex-direction: column; gap: .18rem; } .ms-sync-copy strong { color: var(--fg-strong); font-size: .78rem; } .ms-sync-copy span { color: var(--muted-fg); font-size: .67rem; }
+.ms-live-output { border-left: 3px solid var(--t-function-primary, #0053fd); background: color-mix(in srgb, var(--midground) 22%, transparent); padding: .55rem .7rem; font: .72rem var(--font-mono); margin-bottom: .55rem; }
+.ms-output-ok { border-color: var(--green, #30a46c); } .ms-output-error { border-color: var(--red, #e5484d); } .ms-output-busy { border-color: var(--yellow, #f5a524); }
+.ms-run { display: grid; grid-template-columns: 24px minmax(0,1fr) auto; gap: .55rem; align-items: center; padding: .45rem 0; border-top: 1px solid var(--sidebar-border); }
+.ms-run > div { display: flex; flex-direction: column; } .ms-run strong { font-size: .69rem; } .ms-run span, .ms-run time { color: var(--muted-fg); font-size: .64rem; }
+.ms-text-btn { border: 0; background: transparent; color: var(--t-function-primary, #0053fd); cursor: pointer; font: inherit; }
+@media (max-width: 900px) { .ms-supabase-form, .ms-form-grid, .ms-sync-grid { grid-template-columns: 1fr; } .ms-server, .ms-sync-card { grid-template-columns: 32px 1fr; } .ms-server-actions, .ms-sync-actions { grid-column: 1 / -1; justify-content: flex-end; } }

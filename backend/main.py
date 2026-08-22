@@ -59,12 +59,12 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.4.0",
+    version="1.5.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -75,11 +75,15 @@ async def log_requests(request: Request, call_next):
     start = time.perf_counter()
     body_preview = ""
     if request.method in ("POST", "PUT", "PATCH") and "ingest" not in request.url.path:
-        try:
-            body = await request.body()
-            body_preview = body[:400].decode("utf-8", errors="replace")
-        except Exception:
-            pass
+        sensitive_prefixes = ("/api/mcp", "/api/supabase/config", "/api/supabase/test", "/api/asana/config")
+        if request.url.path.startswith(sensitive_prefixes):
+            body_preview = "[REDACTED CONFIG BODY]"
+        else:
+            try:
+                body = await request.body()
+                body_preview = body[:400].decode("utf-8", errors="replace")
+            except Exception:
+                pass
     response = await call_next(request)
     latency = (time.perf_counter() - start) * 1000
     storage.log_request(
@@ -101,7 +105,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "1.4.0",
+        "version": "1.5.0",
         "products": storage.count_products(),
     }
 
@@ -690,7 +694,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "1.4.0",
+        "version": "1.5.0",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,
@@ -771,6 +775,8 @@ from productpipeline import router as productpipeline_router
 from insights import router as insights_router
 from attributeaudit import router as attributeaudit_router
 from hf import router as hf_router
+from mcp_servers import router as mcp_router
+from supabase_sync import router as supabase_sync_router
 
 app.include_router(plugins_router)
 app.include_router(hub_router)
@@ -789,6 +795,8 @@ app.include_router(productpipeline_router)
 app.include_router(insights_router)
 app.include_router(attributeaudit_router)
 app.include_router(hf_router)
+app.include_router(mcp_router)
+app.include_router(supabase_sync_router)
 
 
 # --------------------------------------------------------------------------

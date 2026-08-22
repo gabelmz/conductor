@@ -88,7 +88,7 @@ async function startBackend() {
   }
   backendPort = await findFreePort();
 
-  const env = { ...process.env };
+  const env = { ...process.env, CONDUCTOR_ELECTRON_EXE: process.execPath };
   const cwd = backend.appRoot;
   // Backend logs go to <appRoot>/data/backend.log — keep the Electron console silent.
   const dataDir = path.join(backend.appRoot, 'data');

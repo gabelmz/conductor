@@ -1779,7 +1779,7 @@ async function refreshStatusbar() {
     $('#status-tokens').textContent = `${fmtNum((tu.total_tokens || 0) + (tu.input_tokens || 0) + (tu.output_tokens || 0))} tok`;
     const as = (st.connections && st.connections.asana) || {};
     $('#status-conn').textContent = `asana ${fmtNum(as.tasks || 0)} · ${st.automations !== undefined ? fmtNum(state.stats.automations ? (state.stats.automations.total || 0) : 0) : ''} automations · db ${(st.db_size || 0) / 1024 / 1024 >= 1 ? (st.db_size / 1024 / 1024).toFixed(1) + 'MB' : fmtNum(st.db_size) + 'B'}`;
-    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.4.0'}`;
+    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.5.0'}`;
   } catch { /* statusbar is best-effort */ }
 }
 
