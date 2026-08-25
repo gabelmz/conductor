@@ -33,9 +33,9 @@ def _latest_check(product_id: int) -> dict | None:
         return None
 
 
-def _product_rows(limit: int = 500, q: str = "") -> list[dict]:
+def _product_rows(limit: int = 500, q: str = "", tag: str = "") -> list[dict]:
     rows = []
-    for p in storage.list_products(limit=1000):
+    for p in storage.list_products(limit=1000, tag=tag or None):
         chk = _latest_check(p["id"]) or {}
         attrs = p.get("attributes") or {}
         name = p.get("name") or ""
@@ -46,7 +46,8 @@ def _product_rows(limit: int = 500, q: str = "") -> list[dict]:
         rows.append({
             "id": p["id"], "sku": sku, "name": name, "category": category,
             "market": p.get("market") or "", "brand": _brand(attrs),
-            "source": p.get("source") or "", "created_at": p.get("created_at") or "",
+            "source": p.get("source") or "", "tags": p.get("tags") or [],
+            "created_at": p.get("created_at") or "",
             "score": chk.get("score"), "severity": chk.get("severity") or "",
             "status": chk.get("status") or "",
         })
@@ -91,7 +92,7 @@ def _file_rows(limit: int = 500, q: str = "") -> list[dict]:
 SOURCES = {
     "products": {
         "label": "Catalog products",
-        "columns": ["sku", "name", "category", "market", "brand", "source", "score", "severity", "status", "created_at"],
+        "columns": ["sku", "name", "category", "market", "brand", "source", "tags", "score", "severity", "status", "created_at"],
         "groupable": ["category", "market", "brand", "source", "severity", "status"],
     },
     "asana": {
@@ -107,12 +108,12 @@ SOURCES = {
 }
 
 
-def _get_rows(source: str, limit: int, q: str = "") -> list[dict]:
+def _get_rows(source: str, limit: int, q: str = "", tag: str = "") -> list[dict]:
     if source == "asana":
         return _asana_rows(limit, q)
     if source == "files":
         return _file_rows(limit, q)
-    return _product_rows(limit, q)
+    return _product_rows(limit, q, tag)
 
 
 # --------------------------------------------------------------------------
@@ -120,6 +121,7 @@ def _get_rows(source: str, limit: int, q: str = "") -> list[dict]:
 # --------------------------------------------------------------------------
 @router.get("/sources")
 def sources():
+    tags = storage.list_tags()
     out = []
     for sid, meta in SOURCES.items():
         count = 0
@@ -132,16 +134,19 @@ def sources():
                 count = len(storage.list_files())
         except Exception:
             count = 0
-        out.append({"id": sid, "label": meta["label"], "columns": meta["columns"],
-                    "groupable": meta["groupable"], "count": count})
+        item = {"id": sid, "label": meta["label"], "columns": meta["columns"],
+                "groupable": meta["groupable"], "count": count}
+        if sid == "products":
+            item["tags"] = tags
+        out.append(item)
     return out
 
 
 @router.get("/table")
-def table(source: str = "products", limit: int = 500, q: str = ""):
+def table(source: str = "products", limit: int = 500, q: str = "", tag: str = ""):
     if source not in SOURCES:
         raise HTTPException(400, "Unknown source")
-    rows = _get_rows(source, min(limit, 1000), q)
+    rows = _get_rows(source, min(limit, 1000), q, tag)
     return {"source": source, "columns": SOURCES[source]["columns"], "rows": rows}
 
 

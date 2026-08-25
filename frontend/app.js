@@ -126,6 +126,7 @@ const VIEW_RENDERERS = {
   ai: () => renderAi(),
   sops: () => renderSops(),
   bernie: () => renderBernie(),
+  asanarules: () => (window.ConductorAsanaRules ? window.ConductorAsanaRules.render() : renderModuleStub('asanarules')),
   integrations: () => renderIntegrations(),
   asana: () => renderAsana(),
   events: () => renderEvents(),
@@ -187,7 +188,7 @@ function showView(name) {
     $$('.sidebar-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
     return;
   }
-  document.body.classList.toggle('bernie-fullscreen', name === 'bernie');
+  document.body.classList.toggle('bernie-fullscreen', name === 'bernie' || name === 'asanarules');
   $$('.sidebar-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   const isChat = name === 'chat';
   $('#thread-scroll').hidden = isChat ? false : true;
@@ -1779,7 +1780,7 @@ async function refreshStatusbar() {
     $('#status-tokens').textContent = `${fmtNum((tu.total_tokens || 0) + (tu.input_tokens || 0) + (tu.output_tokens || 0))} tok`;
     const as = (st.connections && st.connections.asana) || {};
     $('#status-conn').textContent = `asana ${fmtNum(as.tasks || 0)} · ${st.automations !== undefined ? fmtNum(state.stats.automations ? (state.stats.automations.total || 0) : 0) : ''} automations · db ${(st.db_size || 0) / 1024 / 1024 >= 1 ? (st.db_size / 1024 / 1024).toFixed(1) + 'MB' : fmtNum(st.db_size) + 'B'}`;
-    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.5.0'}`;
+    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.6.0'}`;
   } catch { /* statusbar is best-effort */ }
 }
 
@@ -5159,12 +5160,40 @@ async function renderFlatFile() {
           <div class="view-title">Flat File Creation</div>
           <div class="view-sub">Amazon flat-file templates per product type — store templates, edit columns, generate CSVs.</div>
         </div>
-        <div class="view-actions"><button class="btn-primary" id="ff-new"><span class="codicon codicon-add"></span> New template</button></div>
+        <div class="view-actions"><button class="btn-secondary" id="ff-upload"><span class="codicon codicon-cloud-upload"></span> Upload template</button><button class="btn-primary" id="ff-new"><span class="codicon codicon-add"></span> New template</button></div>
       </div>
       <div id="ff-list" class="empty-state">Loading…</div>
     </div>`;
+  $('#ff-upload').addEventListener('click', () => openFlatFileUpload());
   $('#ff-new').addEventListener('click', () => openFlatFileEditor(null));
   await refreshFlatFileList();
+}
+
+async function openFlatFileUpload() {
+  let presets = { product_types: [] };
+  try { presets = await api('/api/flatfiles/presets'); } catch { /* presets optional */ }
+  const ptOptions = ['Uploaded', ...(presets.product_types || [])]
+    .map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  openModal('Upload Flat-File Template', `
+    <label class="field"><span>Template file</span><input id="ff-file" type="file" accept=".csv,.txt,.tsv" /></label>
+    <label class="field"><span>Product type</span><select id="ff-pt-upload">${ptOptions}</select></label>
+    <div class="view-sub" style="margin-top:0.5rem">Row 1 = column labels, row 2 (if machine keys) = field keys, row 3 = example values.</div>`,
+    `<button class="btn-secondary" id="ff-up-cancel">Cancel</button>
+     <button class="btn-primary" id="ff-up-go">Upload template</button>`);
+  $('#ff-up-cancel').addEventListener('click', closeModal);
+  $('#ff-up-go').addEventListener('click', async () => {
+    const file = $('#ff-file').files[0];
+    if (!file) return toast('Choose a file first', 'warn');
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('product_type', $('#ff-pt-upload').value);
+    try {
+      const tpl = await api('/api/flatfiles/upload', { method: 'POST', body: fd });
+      closeModal();
+      toast(`Template "${tpl.name}" imported (${tpl.columns.length} columns)`, 'ok');
+      refreshFlatFileList();
+    } catch (e) { toast(`Upload failed: ${e.message}`, 'err'); }
+  });
 }
 
 async function refreshFlatFileList() {
@@ -5677,7 +5706,7 @@ async function runBrandBrief() {
 /* ==========================================================================
    DATA MANAGEMENT — tables, pivot, charts, wrangler, saved views, Asana push
    ========================================================================== */
-const dataState = { source: 'products', q: '', mode: 'table', group_by: 'category', agg: 'count', measure: 'score', selected: new Set(), rows: [], columns: [] };
+const dataState = { source: 'products', q: '', tag: '', mode: 'table', group_by: 'category', agg: 'count', measure: 'score', selected: new Set(), rows: [], columns: [] };
 
 async function renderData() {
   const root = $('#view-root');
@@ -5693,6 +5722,7 @@ async function renderData() {
       </div>
       <div class="dm-toolbar">
         <select id="dm-source"></select>
+        <select id="dm-tag" style="display:none" title="Which tagged data set to view — sticky per module"></select>
         <input id="dm-q" type="text" placeholder="Search…" />
         <div class="dm-tabs">${['table', 'pivot', 'wrangler', 'views', 'ingest'].map((m) => `<button class="dm-tab ${dataState.mode === m ? 'active' : ''}" data-dm-mode="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
       </div>
@@ -5701,8 +5731,31 @@ async function renderData() {
   try {
     const srcs = await api('/api/data/sources');
     $('#dm-source').innerHTML = srcs.map((s) => `<option value="${s.id}" ${s.id === dataState.source ? 'selected' : ''}>${esc(s.label)} (${s.count})</option>`).join('');
+    const prod = srcs.find((s) => s.id === 'products');
+    if (prod && prod.tags && prod.tags.length) {
+      const tagSel = $('#dm-tag');
+      tagSel.style.display = '';
+      tagSel.innerHTML = '<option value="all">All tags</option>' + prod.tags.map((t) => `<option value="${esc(t.tag)}">${esc(t.tag)} (${t.count})</option>`).join('');
+      try {
+        const pref = await api('/api/settings/tagPref.data');
+        const pv = pref.value;
+        if (pv && pv !== 'all' && prod.tags.some((t) => t.tag === pv)) {
+          dataState.tag = pv; tagSel.value = pv;
+        }
+      } catch { /* baseline default */ }
+    }
   } catch { /* */ }
-  $('#dm-source').addEventListener('change', (e) => { dataState.source = e.target.value; dataState.selected.clear(); renderDataBody(); });
+  $('#dm-source').addEventListener('change', (e) => {
+    dataState.source = e.target.value; dataState.selected.clear();
+    $('#dm-tag').style.display = dataState.source === 'products' && $('#dm-tag').options.length > 1 ? '' : 'none';
+    renderDataBody();
+  });
+  $('#dm-tag').addEventListener('change', async (e) => {
+    dataState.tag = e.target.value === 'all' ? '' : e.target.value;
+    dataState.selected.clear();
+    try { await api('/api/settings/tagPref.data', { method: 'PUT', body: { value: e.target.value } }); } catch { /* */ }
+    renderDataBody();
+  });
   $('#dm-q').value = dataState.q;
   $('#dm-q').addEventListener('input', (e) => { dataState.q = e.target.value; });
   $('#dm-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') renderDataBody(); });
@@ -5725,7 +5778,8 @@ function renderDataBody() {
 async function renderDataTable(body) {
   body.innerHTML = '<div class="empty-state">Loading…</div>';
   try {
-    const data = await api(`/api/data/table?source=${dataState.source}&limit=500&q=${encodeURIComponent(dataState.q)}`);
+    const tagParam = dataState.tag ? `&tag=${encodeURIComponent(dataState.tag)}` : '';
+    const data = await api(`/api/data/table?source=${dataState.source}&limit=500&q=${encodeURIComponent(dataState.q)}${tagParam}`);
     dataState.rows = data.rows; dataState.columns = data.columns;
     const cols = ['#', ...data.columns];
     const head = cols.map((c, i) => i === 0 ? '<th></th>' : `<th data-dm-sort="${esc(c)}">${esc(c)}</th>`).join('');

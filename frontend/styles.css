@@ -502,6 +502,13 @@ button { cursor: pointer; background: none; border: none; padding: 0; }
   display: grid; place-items: center; color: var(--muted-fg); flex-shrink: 0;
 }
 .c-btn:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--fg); }
+/* Flatten composer into ONE row: attach buttons | input | send — these wrapper
+   divs had no rules and stacked as blocks, making the box 3 rows tall. */
+.composer-attach,
+.composer-send {
+  display: flex; align-items: center; gap: 0.125rem; flex-shrink: 0;
+}
+.composer { align-items: center; }
 .c-send { color: var(--t-on-primary); background: var(--grad-1); }
 .c-send:hover { filter: brightness(1.08); color: var(--t-on-primary); }
 

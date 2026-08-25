@@ -1,3 +1,11 @@
+---
+tags:
+  - meeting
+  - reference
+  - coding
+  - knowledge
+---
+
 # Conductor — Business Process Automation Hub
 
 Desktop app cloned from the `parker` skeleton (Electron + FastAPI + SQLite + llama.cpp)

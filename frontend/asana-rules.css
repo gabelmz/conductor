@@ -1,0 +1,107 @@
+/* ==========================================================================
+   Asana Rules Canvas (Process Visualizer port) — loaded by index.html.
+   Full-window takeover via body.bernie-fullscreen; own skin environment
+   scoped to .ar-view (5 PV skins as CSS vars set inline by applySkin()).
+   All dynamic HTML built in asana-rules.js escapes through esc().
+   ========================================================================== */
+.ar-view {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  background: var(--ar-bg, #f6f6f7); color: var(--ar-fg, #111114);
+  font-family: Inter, -apple-system, 'Segoe UI', sans-serif;
+  --ar-card: #ffffff; --ar-muted: #6b6b76; --ar-border: #e3e3e8; --ar-accent: #2563eb;
+  --ar-radius: 4px; --ar-shadow: 3px 3px 0 rgba(17,17,20,.14); --ar-borderw: 2px;
+}
+.ar-topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+  background: var(--ar-card); border-bottom: var(--ar-borderw) solid var(--ar-fg); flex-wrap: wrap; }
+.ar-topbar h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: -.01em; margin: 0; }
+.ar-tag { font-size: 10px; font-weight: 700; padding: 2px 8px; border: 2px solid var(--ar-fg);
+  text-transform: uppercase; border-radius: var(--ar-radius); }
+.ar-tag-mode { border-color: var(--ar-accent); color: var(--ar-accent); }
+.ar-spacer { flex: 1; }
+#ar-name { font: inherit; font-size: 12px; font-weight: 700; width: 200px; padding: 5px 8px;
+  border: 2px solid var(--ar-border); border-radius: var(--ar-radius); background: var(--ar-bg); color: var(--ar-fg); }
+#ar-load { font: inherit; font-size: 11px; font-weight: 700; padding: 5px 6px; max-width: 220px;
+  border: 2px solid var(--ar-border); border-radius: var(--ar-radius); background: var(--ar-bg); color: var(--ar-fg); }
+.ar-btn { font: inherit; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  padding: 7px 12px; border: 2px solid var(--ar-fg); background: var(--ar-card); color: var(--ar-fg);
+  cursor: pointer; border-radius: var(--ar-radius); transition: filter .08s; display: inline-flex; align-items: center; gap: 5px; }
+.ar-btn:hover { background: var(--ar-fg); color: var(--ar-card); }
+.ar-btn.primary, .ar-btn.ar-btn-primary { background: var(--ar-accent); border-color: var(--ar-accent); color: #fff; }
+.ar-btn.primary:hover, .ar-btn.ar-btn-primary:hover { filter: brightness(.9); }
+.ar-btn.danger:hover { background: #dc2626; border-color: #dc2626; }
+
+.ar-main { display: flex; flex: 1; min-height: 0; }
+.ar-inspector { width: 300px; flex: none; background: var(--ar-card); border-right: var(--ar-borderw) solid var(--ar-fg);
+  display: flex; flex-direction: column; min-height: 0; }
+.ar-ih { padding: 10px 14px; border-bottom: var(--ar-borderw) solid var(--ar-fg); font-weight: 800; font-size: 12px; text-transform: uppercase; }
+.ar-ib { overflow: auto; padding: 12px 14px; flex: 1; }
+.ar-sect { font-size: 10px; font-weight: 800; color: var(--ar-muted); text-transform: uppercase; letter-spacing: .07em; margin: 14px 0 6px; }
+.ar-sect:first-child { margin-top: 0; }
+.ar-frow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.ar-frow span { font-size: 12px; font-weight: 600; }
+.ar-frow input[type=text], .ar-frow select, .ar-frow textarea {
+  font: inherit; font-size: 12px; font-weight: 700; width: 150px; padding: 5px 7px;
+  border: 2px solid var(--ar-border); border-radius: var(--ar-radius); background: var(--ar-bg); color: var(--ar-fg); }
+.ar-frow textarea { height: 52px; resize: vertical; font-weight: 600; }
+.ar-frow input:focus, .ar-frow select:focus, .ar-frow textarea:focus { outline: none; border-color: var(--ar-accent); }
+.ar-hint { font-size: 11px; color: var(--ar-muted); font-weight: 600; line-height: 1.6; margin-top: 8px; }
+.ar-kv { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--ar-border); font-size: 12px; }
+.ar-kv b { font-weight: 700; }
+.ar-kv span { color: var(--ar-muted); font-weight: 600; }
+.ar-chip { font: inherit; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 5px 9px;
+  border: 2px solid var(--ar-fg); border-radius: var(--ar-radius); background: var(--ar-card); color: var(--ar-fg);
+  cursor: pointer; margin: 0 6px 6px 0; }
+.ar-chip:hover { background: var(--ar-fg); color: var(--ar-card); }
+.ar-chip.active { border-color: var(--ar-accent); color: var(--ar-accent); }
+
+.ar-canvas-wrap { flex: 1; position: relative; min-width: 0; overflow: hidden;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(120,120,130,.06) 23px, rgba(120,120,130,.06) 24px),
+    repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(120,120,130,.06) 23px, rgba(120,120,130,.06) 24px); }
+#ar-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+#ar-svg .ar-edge-hit { pointer-events: stroke; stroke: transparent; stroke-width: 16px; fill: none; cursor: pointer; }
+#ar-svg .ar-edge { stroke: var(--ar-muted); stroke-width: 2px; fill: none; }
+#ar-svg .ar-edge-temp { stroke: var(--ar-accent); stroke-dasharray: 5 4; }
+#ar-svg .ar-elabel { fill: var(--ar-fg); font-size: 10px; font-weight: 800;
+  paint-order: stroke; stroke: var(--ar-card); stroke-width: 3px; }
+#ar-nodes { position: absolute; inset: 0; z-index: 2; }
+
+.ar-node { position: absolute; width: 200px; background: var(--ar-card); cursor: grab; overflow: visible;
+  border: var(--ar-borderw) solid var(--ar-fg); border-radius: var(--ar-radius);
+  box-shadow: var(--ar-shadow); user-select: none; }
+.ar-node.selected { box-shadow: 5px 5px 0 var(--ar-accent); }
+.ar-node .head { display: flex; align-items: center; gap: 7px; padding: 8px 10px;
+  border-bottom: var(--ar-borderw) solid var(--ar-fg); font-weight: 800; font-size: 11px;
+  text-transform: uppercase; border-radius: calc(var(--ar-radius) - 2px) calc(var(--ar-radius) - 2px) 0 0; }
+.ar-node .head .dot { width: 9px; height: 9px; border: 2px solid currentColor; flex: none; border-radius: var(--ar-radius); }
+.ar-node .head .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ar-node .body { padding: 6px 10px; color: var(--ar-muted); font-weight: 600; line-height: 1.45; font-size: 11px; }
+.ar-node .badge { margin-left: auto; font-size: 8.5px; font-weight: 800; padding: 1px 5px;
+  border: 1.5px solid currentColor; text-transform: uppercase; letter-spacing: .05em; flex: none; }
+.ar-node.running { outline: 3px solid var(--ar-accent); outline-offset: 2px; }
+.ar-node.done .head .dot { background: #16a34a; }
+.ar-node .handle { position: absolute; width: 11px; height: 11px; border: 2px solid var(--ar-fg);
+  background: var(--ar-card); border-radius: 50%; z-index: 3; }
+.ar-node .handle.in { left: -7px; top: 15px; cursor: crosshair; }
+.ar-node .handle.out { right: -7px; top: 15px; cursor: crosshair; }
+.ar-node .handle:hover { background: var(--ar-accent); border-color: var(--ar-accent); }
+
+/* node head styles — shared by asana kinds + generic styles */
+.ar-node.st-entry .head { background: var(--ar-fg); color: var(--ar-card); }
+.ar-node.st-entry .head .dot { border-color: var(--ar-card); background: var(--ar-accent); }
+.ar-node.st-task .head { background: color-mix(in srgb, var(--ar-accent) 12%, var(--ar-card)); }
+.ar-node.st-process .head { background: #ecfdf5; }
+.ar-node.st-decision .head { background: #fef3c7; }
+.ar-node.st-wait .head { background: #f1f5f9; }
+.ar-node.st-end .head { background: #fee2e2; }
+.ar-node.st-end .head .dot { background: #dc2626; }
+
+.ar-iohint { position: absolute; bottom: 10px; left: 12px; z-index: 3; font-size: 10px; font-weight: 700;
+  color: var(--ar-muted); text-transform: uppercase; letter-spacing: .05em; pointer-events: none; }
+
+.ar-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(80px); z-index: 9999;
+  background: #111114; color: #fff; font-size: 12px; font-weight: 700; padding: 9px 16px;
+  border-radius: 4px; box-shadow: 4px 4px 0 rgba(17,17,20,.2); max-width: 80%; opacity: 0;
+  transition: transform .18s ease, opacity .18s ease; pointer-events: none; }
+.ar-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+.ar-toast.err { background: #dc2626; }

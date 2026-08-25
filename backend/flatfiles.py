@@ -12,8 +12,9 @@ from __future__ import annotations
 import csv
 import io
 import json
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 import storage
 
@@ -80,6 +81,59 @@ def _normalize_columns(columns) -> list[dict]:
 def presets():
     return {"product_types": sorted(PRODUCT_TYPE_COLUMNS.keys()),
             "templates": {k: v for k, v in PRODUCT_TYPE_COLUMNS.items()}}
+
+
+def _norm_key(s: str) -> str:
+    return str(s or "").strip().lower().replace(" ", "_")
+
+
+# --------------------------------------------------------------------------
+# Template upload: user supplies their own template file (CSV/TSV).
+# Row 1 = human labels; row 2 (if machine keys) = field keys; row 3 = examples.
+# --------------------------------------------------------------------------
+@router.post("/upload", status_code=201)
+async def upload_template(file: UploadFile = File(...), product_type: str = Form("Uploaded")):
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Template file too large (max 5MB)")
+    text = raw.decode("utf-8-sig", errors="replace")
+    lines = text.splitlines()
+    delim = "\t" if (lines and "\t" in lines[0]) else ","
+    rows = [r for r in csv.reader(io.StringIO(text), delimiter=delim)
+            if any(str(c).strip() for c in r)]
+    if not rows:
+        raise HTTPException(400, "Template file is empty")
+    header = [str(c).strip() for c in rows[0]]
+    if not header or not any(header):
+        raise HTTPException(400, "Template file has no header row")
+
+    # Second row is treated as machine keys when it is already normalized.
+    keys = None
+    if len(rows) > 1 and len(rows[1]) == len(header):
+        cand = [str(c).strip() for c in rows[1]]
+        if all(k and k == _norm_key(k) for k in cand):
+            keys = cand
+    labels = header
+    if keys is None:
+        keys = [_norm_key(c) for c in header]
+
+    example = ([str(c).strip() for c in rows[2]]
+               if len(rows) > 2 and len(rows[2]) == len(keys) else [])
+    columns = _normalize_columns([
+        {"key": k, "label": lbl, "required": k in {"sku", "price", "quantity", "product-id", "product-id-type"},
+         "values": [], "example": (example[i] if i < len(example) else "")}
+        for i, (k, lbl) in enumerate(zip(keys, labels))
+    ])
+    name = (Path(file.filename or "uploaded-template").stem or "uploaded-template").strip()
+    now = storage.now_iso()
+    cur = storage._conn().execute(
+        "INSERT INTO flatfile_templates (name, product_type, columns, header_note, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?)",
+        (name, product_type, json.dumps(columns),
+         "Imported from uploaded template file", now, now),
+    )
+    storage._conn().commit()
+    return get_template(cur.lastrowid)
 
 
 @router.get("")

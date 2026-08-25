@@ -38,6 +38,7 @@ def init_db() -> None:
             market TEXT DEFAULT 'US',
             attributes TEXT DEFAULT '{}',
             source TEXT DEFAULT 'manual',
+            tags TEXT DEFAULT '[]',          -- json: list of data-source tags
             file_id INTEGER,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -267,6 +268,11 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,               -- json-encoded (or plain string)
+            updated_at TEXT NOT NULL
+        );
         """
     )
     conn.commit()
@@ -277,6 +283,8 @@ def init_db() -> None:
     if "updated_at" not in cols:
         conn.execute("ALTER TABLE products ADD COLUMN updated_at TEXT")
         conn.execute("UPDATE products SET updated_at=created_at WHERE updated_at IS NULL OR updated_at='' ")
+    if "tags" not in cols:
+        conn.execute("ALTER TABLE products ADD COLUMN tags TEXT DEFAULT '[]'")
     conn.commit()
 
 
@@ -289,13 +297,16 @@ def now_iso() -> str:
 # --------------------------------------------------------------------------
 def create_product(sku: str, name: str, category: str = "general",
                    market: str = "US", attributes: dict | None = None,
-                   source: str = "manual", file_id: int | None = None) -> int:
+                   source: str = "manual", file_id: int | None = None,
+                   tags: list | None = None) -> int:
     conn = _conn()
     stamp = now_iso()
     cur = conn.execute(
-        "INSERT INTO products (sku, name, category, market, attributes, source, file_id, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
-        (sku, name, category, market, json.dumps(attributes or {}), source, file_id, stamp, stamp),
+        "INSERT INTO products (sku, name, category, market, attributes, source, tags, file_id, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (sku, name, category, market, json.dumps(attributes or {}), source,
+         json.dumps([str(t).strip() for t in (tags or []) if str(t).strip()]),
+         file_id, stamp, stamp),
     )
     conn.commit()
     return cur.lastrowid
@@ -303,13 +314,15 @@ def create_product(sku: str, name: str, category: str = "general",
 
 def update_product(product_id: int, **fields) -> bool:
     """Update whitelisted product fields. attributes must be a dict (merged by caller)."""
-    allowed = {"sku", "name", "category", "market", "attributes", "source", "file_id"}
+    allowed = {"sku", "name", "category", "market", "attributes", "source", "tags", "file_id"}
     sets, vals = [], []
     for k, v in fields.items():
         if k not in allowed:
             continue
         if k == "attributes":
             v = json.dumps(v if isinstance(v, dict) else {})
+        if k == "tags":
+            v = json.dumps([str(t).strip() for t in (v or []) if str(t).strip()])
         sets.append(f"{k}=?")
         vals.append(v)
     if not sets:
@@ -331,6 +344,7 @@ def list_products_by_file(file_id: int) -> list[dict]:
     for r in rows:
         d = dict(r)
         d["attributes"] = json.loads(d.get("attributes") or "{}")
+        d["tags"] = json.loads(d.get("tags") or "[]")
         out.append(d)
     return out
 
@@ -375,17 +389,34 @@ def get_product(product_id: int) -> dict | None:
         return None
     d = dict(row)
     d["attributes"] = json.loads(d.get("attributes") or "{}")
+    d["tags"] = json.loads(d.get("tags") or "[]")
     return d
 
 
-def list_products(limit: int = 200) -> list[dict]:
+def list_products(limit: int = 200, tag: str | None = None) -> list[dict]:
     rows = _conn().execute("SELECT * FROM products ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     out = []
     for r in rows:
         d = dict(r)
         d["attributes"] = json.loads(d.get("attributes") or "{}")
+        d["tags"] = json.loads(d.get("tags") or "[]")
+        if tag and tag not in d["tags"]:
+            continue
         out.append(d)
     return out
+
+
+def list_tags() -> list[dict]:
+    """Distinct product tags with counts, most frequent first."""
+    counts: dict[str, int] = {}
+    rows = _conn().execute("SELECT tags FROM products").fetchall()
+    for r in rows:
+        for t in json.loads(r["tags"] or "[]"):
+            t = str(t).strip()
+            if t:
+                counts[t] = counts.get(t, 0) + 1
+    return [{"tag": t, "count": n} for t, n in
+            sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
 def count_products() -> int:

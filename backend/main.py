@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 import storage
 import automation
 import bernie
+import asana_rules
 import ai_ingest
 from agents import DEV_ROOT, _safe_walk, list_agents, run_quick_action
 from chat import router as chat_router
@@ -59,7 +60,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.5.0",
+    version="1.6.0",
 )
 
 app.add_middleware(
@@ -105,7 +106,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "1.5.0",
+        "version": "1.6.0",
         "products": storage.count_products(),
     }
 
@@ -694,7 +695,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "1.5.0",
+        "version": "1.6.0",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,
@@ -758,6 +759,7 @@ app.include_router(llama_router)
 app.include_router(ui_router)
 app.include_router(automation.router)
 app.include_router(bernie.router)
+app.include_router(asana_rules.router)
 from plugins import router as plugins_router
 from hub import router as hub_router
 from reports import router as reports_router
@@ -765,6 +767,7 @@ from guidelines import router as guidelines_router
 from flatfiles import router as flatfiles_router
 from svl import router as svl_router
 from data import router as data_router
+from settings_api import router as settings_api_router
 from features import router as features_router
 from brandcompare import router as brandcompare_router
 from keepa import router as keepa_router
@@ -785,6 +788,7 @@ app.include_router(guidelines_router)
 app.include_router(flatfiles_router)
 app.include_router(svl_router)
 app.include_router(data_router)
+app.include_router(settings_api_router)
 app.include_router(features_router)
 app.include_router(brandcompare_router)
 app.include_router(keepa_router)

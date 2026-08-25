@@ -62,6 +62,7 @@ const NAV_ITEMS = {
   workflowbuilder: { label: 'Workflow Builder',   icon: 'codicon-circuit-board',      view: 'automations' },
   processes:       { label: 'Process Discovery',  icon: 'codicon-lightbulb',          view: 'processes', count: 'processes' },
   bernie:          { label: 'Flow Canvas',        icon: 'codicon-graph',              view: 'bernie' },
+  asanarules:      { label: 'Asana Rules Canvas', icon: 'codicon-rules',              view: 'asanarules' },
   // AI
   aichat:          { label: 'AI Chat',            icon: 'codicon-comment-discussion', view: 'chat' },
   models:          { label: 'Models',             icon: 'codicon-hubot',              view: 'models' },
@@ -92,7 +93,7 @@ const SIDEBAR_PRESETS = {
       { label: 'Operations',  items: ['brands', 'people'] },
       { label: 'Platforms',   items: ['amazon', 'spapi', 'walmart', 'tiktok', 'target', 'spp', 'coastal', 'agency'] },
       { label: 'Catalog',     items: ['products', 'listings', 'variations', 'ingest', 'flatfile', 'productpipeline', 'keepa', 'attraudit', 'svl', 'brandcompare', 'regs', 'tasks', 'reports', 'guidelines'] },
-      { label: 'Automation',  items: ['automations', 'workflowbuilder', 'processes', 'bernie'] },
+      { label: 'Automation',  items: ['automations', 'workflowbuilder', 'processes', 'bernie', 'asanarules'] },
       { label: 'AI',          items: ['aichat', 'models', 'agents', 'aiworkflows', 'agentbuilder', 'features'] },
       { label: 'Knowledge',   items: ['sops', 'runbooks', 'policies'] },
       { label: 'Platform',    items: ['integrations', 'mcpsync', 'events', 'requests', 'developer', 'asana'] },
@@ -113,7 +114,7 @@ const SIDEBAR_PRESETS = {
     desc: 'Function-oriented lens — Catalog, Automation, AI, Knowledge, Platform.',
     sections: [
       { label: 'Catalog',    items: ['products', 'listings', 'variations', 'ingest', 'flatfile', 'productpipeline', 'keepa', 'attraudit', 'svl', 'brandcompare', 'compliance', 'regs', 'tasks', 'insights'] },
-      { label: 'Automation', items: ['automations', 'workflowbuilder', 'processes', 'bernie'] },
+      { label: 'Automation', items: ['automations', 'workflowbuilder', 'processes', 'bernie', 'asanarules'] },
       { label: 'AI',         items: ['aichat', 'models', 'agents', 'agentbuilder', 'features'] },
       { label: 'Knowledge',  items: ['sops', 'runbooks', 'policies'] },
       { label: 'Platform',   items: ['integrations', 'mcpsync', 'events', 'requests', 'developer'] },
@@ -125,7 +126,7 @@ const SIDEBAR_PRESETS = {
     sections: [
       { label: 'Main',         items: ['chat', 'dashboard', 'models', 'insights'] },
       { label: 'Operations',   items: ['compliance', 'products', 'ingest', 'agents', 'tasks', 'regs', 'variations'] },
-      { label: 'Automate',     items: ['processes', 'automations', 'aiworkflows', 'sops', 'bernie'] },
+      { label: 'Automate',     items: ['processes', 'automations', 'aiworkflows', 'sops', 'bernie', 'asanarules'] },
       { label: 'Integrations', items: ['integrations', 'mcpsync', 'asana', 'events'] },
       { label: 'System',       items: ['requests'] },
     ],
@@ -149,6 +150,23 @@ function loadSidebarConfig() {
       if (!hasSync && c.sections[0] && Array.isArray(c.sections[0].items)) {
         c.sections[0].items.push('mcpsync');
         localStorage.setItem(SIDEBAR_KEY, JSON.stringify(c));
+      }
+      // Migration: make sure the Asana Rules Canvas follows Flow Canvas.
+      const hasRules = c.sections.some((sec) => Array.isArray(sec.items) && sec.items.includes('asanarules'));
+      if (!hasRules) {
+        let placed = false;
+        for (const anchor of ['bernie', 'automations', 'processes', 'workflowbuilder']) {
+          for (const sec of c.sections) {
+            if (!Array.isArray(sec.items)) continue;
+            const ai = sec.items.indexOf(anchor);
+            if (ai >= 0) { sec.items.splice(ai + 1, 0, 'asanarules'); localStorage.setItem(SIDEBAR_KEY, JSON.stringify(c)); placed = true; break; }
+          }
+          if (placed) break;
+        }
+        if (!placed && c.sections[0] && Array.isArray(c.sections[0].items)) {
+          c.sections[0].items.push('asanarules');
+          localStorage.setItem(SIDEBAR_KEY, JSON.stringify(c));
+        }
       }
       return c;
     }

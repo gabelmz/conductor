@@ -1,3 +1,11 @@
+---
+tags:
+  - coding
+  - meeting
+  - reference
+  - knowledge
+---
+
 # LAW & Parker → Conductor port — conflict log & recommendations
 
 Date: 2026-08-17 · Scope: adopt every feature from LAW (Luminize Agent Workbench) and
