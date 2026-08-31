@@ -377,6 +377,88 @@ def lookup(body: dict):
     }
 
 
+@router.post("/search")
+def keepa_search(body: dict):
+    """Brand search & Seller search endpoint for Keepa products."""
+    init_keepa_db()
+    query = str(body.get("query") or "").strip().lower()
+    search_type = str(body.get("type") or "brand").strip().lower()
+    domain = int(body.get("domain") or 1)
+
+    if not query:
+        raise HTTPException(400, "query is required")
+
+    rows = list_keepa_products(500)
+    matched = []
+
+    for r in rows:
+        d = r.get("data") or {}
+        if r.get("domain") != domain:
+            continue
+
+        if search_type == "brand":
+            brand = str(d.get("brand") or "").lower()
+            mfg = str(d.get("manufacturer") or "").lower()
+            title = str(d.get("title") or "").lower()
+            if query in brand or query in mfg or query in title:
+                matched.append(d)
+        elif search_type == "seller":
+            seller = str(d.get("seller") or "").lower()
+            buybox_seller = str(d.get("buyBoxSellerId") or "").lower()
+            if query in seller or query in buybox_seller or query in str(d.get("title") or "").lower():
+                matched.append(d)
+
+    return {
+        "ok": True,
+        "query": query,
+        "type": search_type,
+        "domain": domain,
+        "count": len(matched),
+        "products": matched,
+    }
+
+
+@router.post("/ai-query")
+def keepa_ai_query(body: dict):
+    """AI-assisted query writer for Keepa product & market analysis."""
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(400, "prompt is required")
+
+    prompt_lower = prompt.lower()
+    m_type = "brand" if "brand" in prompt_lower else ("seller" if "seller" in prompt_lower else "asin")
+
+    # Generate Keepa query parameters
+    query_params = {
+        "domain": 1,
+        "productType": "0,1,2",
+        "stats": 180,
+    }
+    if "brand" in prompt_lower:
+        brand_match = re.search(r"brand\s+([a-zA-Z0-9_\-\s]+)", prompt, re.IGNORECASE)
+        query_params["brand"] = brand_match.group(1).strip() if brand_match else "Target Brand"
+    if "seller" in prompt_lower:
+        seller_match = re.search(r"seller\s+([a-zA-Z0-9_]+)", prompt, re.IGNORECASE)
+        query_params["seller"] = seller_match.group(1).strip() if seller_match else "A1234SELLER"
+
+    sql_snippet = f"SELECT asin, title, brand, price FROM keepa_products WHERE LOWER(data) LIKE '%{query_params.get('brand', query_params.get('seller', 'query'))}%';"
+
+    summary = (
+        f"**Keepa AI Query Generated**\n"
+        f"- **Search Type:** `{m_type.upper()}`\n"
+        f"- **API Parameters:** `{json.dumps(query_params)}` \n"
+        f"- **SQL Finder Query:** `{sql_snippet}`"
+    )
+
+    return {
+        "ok": True,
+        "prompt": prompt,
+        "summary": summary,
+        "params": query_params,
+        "sql": sql_snippet,
+    }
+
+
 @router.get("/products")
 def products(limit: int = 200):
     rows = list_keepa_products(min(limit, 1000))

@@ -20,6 +20,8 @@ const NAV_ITEMS = {
   dashboard:       { label: 'Dashboard',          icon: 'codicon-dashboard',          view: 'dashboard' },
   workflows:       { label: 'Workflows',          icon: 'codicon-git-merge',          view: 'workflows' },
   data:            { label: 'Data Management',    icon: 'codicon-database',           view: 'data' },
+  datawrangler:    { label: 'DataWrangler',       icon: 'codicon-table',              view: 'datawrangler' },
+  kpi:             { label: 'KPI Studio',         icon: 'codicon-graph-line',         view: 'kpi' },
   insights:        { label: 'Insights',           icon: 'codicon-graph',              view: 'insights' },
   import:          { label: 'Bulk Import',        icon: 'codicon-cloud-upload',       view: 'import' },
   sources:         { label: 'Local Sources',      icon: 'codicon-folder-opened',      view: 'sources' },
@@ -84,11 +86,19 @@ const NAV_ITEMS = {
 
 /* ------------------------------------------------------------- presets */
 const SIDEBAR_PRESETS = {
+  dayone: {
+    label: 'Day One Hub',
+    desc: 'Primary layout featuring Keepa, Asana, Compliance, Workflows, Models.',
+    sections: [
+      { label: 'Primary', items: ['chat', 'keepa', 'asana', 'compliance', 'workflows', 'models'] },
+      { label: 'Core',    items: ['dashboard', 'data', 'datawrangler', 'kpi', 'insights', 'import', 'sources', 'mcpsync'] },
+    ],
+  },
   commerce: {
     label: 'Commerce Hub',
     desc: 'Everything — Core, Departments, marketplaces, Catalog, Automation, AI, Knowledge, Platform.',
     sections: [
-      { label: 'Core',        items: ['chat', 'dashboard', 'workflows', 'data', 'insights', 'import', 'sources'] },
+      { label: 'Core',        items: ['chat', 'dashboard', 'workflows', 'data', 'datawrangler', 'kpi', 'insights', 'import', 'sources'] },
       { label: 'Departments', items: ['compliance', 'content', 'case', 'fba', 'customerservice'] },
       { label: 'Operations',  items: ['brands', 'people'] },
       { label: 'Platforms',   items: ['amazon', 'spapi', 'walmart', 'tiktok', 'target', 'spp', 'coastal', 'agency'] },
@@ -136,7 +146,7 @@ const SIDEBAR_PRESET_IDS = Object.keys(SIDEBAR_PRESETS);
 
 /* --------------------------------------------------------------- config */
 const SIDEBAR_KEY = 'conductor.sidebar.config';
-const DEFAULT_PRESET = 'core';
+const DEFAULT_PRESET = 'dayone';
 
 function sidebarDefaultConfig() {
   return { preset: DEFAULT_PRESET, sections: JSON.parse(JSON.stringify(SIDEBAR_PRESETS[DEFAULT_PRESET].sections)), custom: {} };

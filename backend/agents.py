@@ -222,6 +222,42 @@ def scan_vault_structure(root: Path = DEV_ROOT) -> list[dict]:
 # --------------------------------------------------------------------------
 AGENT_DEFS = [
     {
+        "id": "kpi-architect",
+        "name": "NLP to KPI Architect",
+        "tagline": "Convert prompts to KPI metrics & math formulas",
+        "description": "Translates natural language requests into structured KPI definitions, target thresholds, and calculation rules. Integrates with the KPI Studio and DataWrangler.",
+        "color": "#8b5cf6",
+        "icon": "zap",
+        "source": "kpi: nlp_engine",
+        "tools": ["nlp-parser", "kpi-builder", "formula-engine"],
+        "quick_action": "kpi_architect",
+        "prompt_hint": "Create a metric for internal SLA target 95% for Gabe",
+    },
+    {
+        "id": "performance-evaluator",
+        "name": "Employee Performance Evaluator",
+        "tagline": "Scorecards, % to goal & employee reviews",
+        "description": "Evaluates employee metrics across departments (Catalog, Cases, OmniChannel, FBA), calculates % to goal, and generates AI performance review reports.",
+        "color": "#ec4899",
+        "icon": "graph",
+        "source": "kpi: global_kpis.xlsx",
+        "tools": ["scorecard-evaluator", "performance-report", "goal-tracker"],
+        "quick_action": "performance_evaluator",
+        "prompt_hint": "Generate employee performance review for Gabe",
+    },
+    {
+        "id": "asana-kpi-harvester",
+        "name": "Asana KPI Harvester",
+        "tagline": "Derive KPIs from Asana tasks & sync data",
+        "description": "Connects local Asana task sync data (overdue ratios, task completion counts, cycle times) to employee KPI metrics.",
+        "color": "#10b981",
+        "icon": "checklist",
+        "source": "asana: sync_engine",
+        "tools": ["asana-query", "cycle-time-calc", "overdue-aggregator"],
+        "quick_action": "asana_kpi_harvester",
+        "prompt_hint": "Harvest task completion rate & overdue % from Asana",
+    },
+    {
         "id": "parker",
         "name": "Parker",
         "tagline": "EU/US/UK product compliance checks",
@@ -376,6 +412,32 @@ def run_quick_action(agent_id: str) -> dict:
         if a["id"] == agent_id:
             action = a.get("quick_action", agent_id)
             break
+    if action == "kpi_architect":
+        from kpi import list_kpis
+        kpis = list_kpis()
+        return {
+            "title": "NLP to KPI Architect — Active Metrics",
+            "summary": f"{len(kpis)} active KPI metrics defined in storage.",
+            "rows": [{"department": k["department"], "owner": k["owner"], "kpi": k["kpi_name"], "target": f"{k.get('expected_value') or 'N/A'} {k.get('metric_type') or ''}"} for k in kpis[:20]],
+        }
+    if action == "performance_evaluator":
+        from kpi import evaluate_employees
+        ev = evaluate_employees()
+        scorecards = ev.get("scorecards", [])
+        return {
+            "title": "Employee Performance Evaluator — Scorecards",
+            "summary": f"Evaluated performance scorecards across {len(scorecards)} employee owners.",
+            "rows": [{"owner": s["owner"], "rating": s["performance_rating"], "score": f"{s['composite_score']}%", "kpis": s["total_kpis"]} for s in scorecards],
+        }
+    if action == "asana_kpi_harvester":
+        import storage
+        counts = storage.asana_counts()
+        tasks = storage.list_asana_tasks(limit=10)
+        return {
+            "title": "Asana KPI Harvester — Sync Pipeline",
+            "summary": f"{counts.get('tasks', 0)} Asana tasks synced ({counts.get('open', 0)} open, {counts.get('overdue', 0)} overdue).",
+            "rows": [{"task": t["name"], "assignee": t.get("assignee_name") or "—", "due": t.get("due_on") or "—"} for t in tasks],
+        }
     if action in ("parker", "products"):
         products = scan_compliance_products()
         return {

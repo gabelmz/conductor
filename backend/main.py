@@ -46,6 +46,8 @@ from localsources import init_local_sources_db
 from productpipeline import init_product_pipeline_db
 from insights import init_insights_db
 from attributeaudit import init_attribute_audit_db
+from kpi import init_kpi_db, seed_kpis_from_excel, kpi_router, wrangler_router
+from brand_onboarding import onboarding_router
 
 init_hub_db()
 init_keepa_db()
@@ -54,13 +56,15 @@ init_local_sources_db()
 init_product_pipeline_db()
 init_insights_db()
 init_attribute_audit_db()
+init_kpi_db()
+seed_kpis_from_excel()
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.6.0",
+    version="1.7.0",
 )
 
 app.add_middleware(
@@ -106,7 +110,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "1.6.0",
+        "version": "1.7.0",
         "products": storage.count_products(),
     }
 
@@ -513,6 +517,55 @@ def asana_sync_start(body: dict):
     return {"job_id": job_id, "mode": mode, "deep": deep, "status": "started"}
 
 
+@app.post("/api/asana/hook/pull")
+def asana_auto_pull_hook(body: dict | None = None):
+    """Auto-pull hook called when navigating to Asana page in Conductor.
+    Triggers delta sync if local data is stale (>15 mins) or if forced.
+    """
+    body = body or {}
+    force = bool(body.get("force"))
+    max_age_s = int(body.get("max_age_seconds") or 900)
+
+    if not asana_sync.has_credentials():
+        return {"ok": False, "triggered": False, "reason": "No PAT credentials configured"}
+
+    last_run = storage.last_asana_run()
+    should_pull = force or not last_run
+
+    if last_run and not should_pull:
+        finished_at = last_run.get("finished_at")
+        if finished_at:
+            try:
+                dt = datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                age = (datetime.now(timezone.utc) - dt).total_seconds()
+                if age > max_age_s:
+                    should_pull = True
+            except Exception:
+                pass
+
+    if should_pull:
+        res = asana_sync_start({"mode": "recent", "deep": False})
+        return {"ok": True, "triggered": True, "reason": "stale_or_forced", "job": res}
+
+    return {"ok": True, "triggered": False, "reason": "fresh", "last_run": last_run}
+
+
+@app.post("/api/asana/push-supabase")
+def asana_push_supabase():
+    """Push local Asana tasks directly to Supabase."""
+    import supabase_sync
+    try:
+        res = supabase_sync.sync(
+            direction="push",
+            adapters=supabase_sync.local_adapters("asana_tasks"),
+        )
+        return {"ok": True, "pushed": res["counts"]["pushed"], "detail": res}
+    except Exception as exc:
+        raise HTTPException(500, f"Supabase push failed: {exc}")
+
+
 @app.get("/api/asana/projects")
 def asana_projects(include_archived: bool = False):
     return storage.list_asana_projects(include_archived=include_archived)
@@ -695,7 +748,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "1.6.0",
+        "version": "1.7.0",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,
@@ -801,6 +854,9 @@ app.include_router(attributeaudit_router)
 app.include_router(hf_router)
 app.include_router(mcp_router)
 app.include_router(supabase_sync_router)
+app.include_router(kpi_router)
+app.include_router(wrangler_router)
+app.include_router(onboarding_router)
 
 
 # --------------------------------------------------------------------------

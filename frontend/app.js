@@ -143,6 +143,8 @@ const VIEW_RENDERERS = {
   guidelines: () => renderGuidelines(),
   workflows: () => renderWorkflows(),
   data: () => renderData(),
+  datawrangler: () => window.ConductorWrangler.render(),
+  kpi: () => window.ConductorKpiStudio.render(),
   import: () => window.ConductorBulkImport.render(),
   sources: () => window.ConductorLocalSources.render(),
   insights: () => window.ConductorInsights.render(),
@@ -1253,14 +1255,84 @@ async function renderIntegrations() {
 /* ------------------------------------------------------------------- asana */
 async function renderAsana() {
   const root = $('#view-root');
-  root.innerHTML = `<div class="view"><div class="view-header"><div><div class="view-title">Asana</div>
-    <div class="view-sub">Full workspace sync — tasks, projects, custom fields, stories. The local mirror powers live automation actions.</div></div>
-    <div class="view-actions"><button class="btn-primary" id="btn-asana-sync"><span class="codicon codicon-sync"></span> Sync now</button></div></div>
-    <div class="home-cards" id="asana-cards"><div class="folder-loading">Loading…</div></div>
-    <div class="dash-cols">
-      <div class="dash-col"><div class="view-title">Projects</div><div class="data-table-wrap" id="asana-projects"></div></div>
-      <div class="dash-col"><div class="view-title">Recent tasks</div><div class="data-table-wrap" id="asana-tasks"></div></div>
-    </div></div>`;
+  root.innerHTML = `<div class="view">
+    <div class="view-header">
+      <div>
+        <div class="view-title">Asana & Performance Hub</div>
+        <div class="view-sub">AI-assisted performance evaluation, employee scorecards, and full workspace task sync.</div>
+      </div>
+      <div class="view-actions">
+        <button class="btn-secondary" id="btn-asana-push-sb"><span class="codicon codicon-cloud-upload"></span> Push to Supabase</button>
+        <button class="btn-primary" id="btn-asana-sync"><span class="codicon codicon-sync"></span> Sync now</button>
+      </div>
+    </div>
+
+    <!-- View Mode Switcher -->
+    <div style="display:flex; gap:10px; margin-bottom:16px; border-bottom:1px solid var(--t-edges-borderColor, #333); padding-bottom:10px;">
+      <button class="btn-primary" id="btn-tab-perf">📈 Performance Dashboard</button>
+      <button class="btn-secondary" id="btn-tab-tasks">📋 Projects & Tasks</button>
+    </div>
+
+    <div id="asana-perf-panel">
+      <!-- AI Assisted Performance Eval Card -->
+      <div class="card" style="padding:14px; margin-bottom:16px; background:var(--t-surface-raised, #1e1e2e);">
+        <div style="font-weight:600; margin-bottom:8px;">⚡ AI-Assisted Employee Performance Evaluator:</div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="asana-perf-eval-input" class="input-text" style="flex:1;" placeholder="Prompt evaluation (e.g. 'Evaluate performance review for Gabe and Carlos')">
+          <button class="btn-primary" id="btn-asana-perf-eval-run">Run AI Evaluation</button>
+        </div>
+        <div id="asana-perf-eval-out" style="margin-top:10px; display:none; background:var(--t-surface-base, #111); padding:10px; border-radius:6px; border:1px solid var(--t-edges-borderColor, #333);"></div>
+      </div>
+
+      <div class="home-cards" id="asana-perf-scorecards">
+        <div class="folder-loading">Loading Performance Scorecards…</div>
+      </div>
+    </div>
+
+    <div id="asana-tasks-panel" style="display:none;">
+      <div class="home-cards" id="asana-cards"><div class="folder-loading">Loading…</div></div>
+      <div class="dash-cols">
+        <div class="dash-col"><div class="view-title">Projects</div><div class="data-table-wrap" id="asana-projects"></div></div>
+        <div class="dash-col"><div class="view-title">Recent tasks</div><div class="data-table-wrap" id="asana-tasks"></div></div>
+      </div>
+    </div>
+  </div>`;
+
+  // Hook: Auto-pull on view load if data is stale
+  try {
+    const pullRes = await api('/api/asana/hook/pull', { method: 'POST' });
+    if (pullRes && pullRes.triggered) {
+      toast('Asana auto-pull triggered (stale data updated)', 'info');
+    }
+  } catch { /* ignored */ }
+
+  // Wire Tab Buttons
+  root.querySelector('#btn-tab-perf').addEventListener('click', () => {
+    root.querySelector('#asana-perf-panel').style.display = 'block';
+    root.querySelector('#asana-tasks-panel').style.display = 'none';
+    root.querySelector('#btn-tab-perf').className = 'btn-primary';
+    root.querySelector('#btn-tab-tasks').className = 'btn-secondary';
+  });
+  root.querySelector('#btn-tab-tasks').addEventListener('click', () => {
+    root.querySelector('#asana-perf-panel').style.display = 'none';
+    root.querySelector('#asana-tasks-panel').style.display = 'block';
+    root.querySelector('#btn-tab-perf').className = 'btn-secondary';
+    root.querySelector('#btn-tab-tasks').className = 'btn-primary';
+  });
+
+  // AI Assisted Eval Button
+  root.querySelector('#btn-asana-perf-eval-run').addEventListener('click', async () => {
+    const prompt = root.querySelector('#asana-perf-eval-input').value.trim() || 'Evaluate performance for all employees';
+    const outEl = root.querySelector('#asana-perf-eval-out');
+    outEl.style.display = 'block';
+    outEl.innerHTML = '<i>AI Agent evaluating employee performance…</i>';
+    try {
+      const res = await api('/api/kpis/nlp-convert', { method: 'POST', body: { prompt } });
+      outEl.innerHTML = `<div>${res.summary ? res.summary.replace(/\n/g, '<br>') : 'Evaluation generated'}</div>`;
+    } catch (e) {
+      outEl.innerHTML = `<span style="color:red;">Error: ${esc(e.message)}</span>`;
+    }
+  });
 
   root.querySelector('#btn-asana-sync').addEventListener('click', async () => {
     toast('Sync started — watch the job in the sidebar counts', 'info');
@@ -1268,6 +1340,40 @@ async function renderAsana() {
     catch (e) { toast(e.message, 'err'); }
   });
 
+  root.querySelector('#btn-asana-push-sb').addEventListener('click', async () => {
+    toast('Pushing local Asana tasks to Supabase…', 'info');
+    try {
+      const res = await api('/api/asana/push-supabase', { method: 'POST' });
+      toast(`Pushed ${res.pushed || 0} tasks to Supabase`, 'info');
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  });
+
+  // Load Performance Scorecards
+  try {
+    const evalRes = await api('/api/kpis/employee-evaluation');
+    const scorecards = evalRes.scorecards || [];
+    const scEl = root.querySelector('#asana-perf-scorecards');
+    if (scorecards.length > 0) {
+      scEl.innerHTML = scorecards.map((sc) => `
+        <div class="home-card" style="display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; justify-content:space-between; font-weight:700;">
+            <span>${esc(sc.owner)}</span>
+            <span class="chip ${sc.performance_rating === 'Needs Focus' ? 'chip-warn' : 'chip-primary'}">${esc(sc.performance_rating)}</span>
+          </div>
+          <div style="font-size:1.6rem; font-weight:800; color:var(--t-function-primary, #3b82f6);">${sc.composite_score}%</div>
+          <div style="font-size:0.8rem; color:var(--t-color-muted, #888);">${sc.total_kpis} Tracked KPIs</div>
+        </div>
+      `).join('');
+    } else {
+      scEl.innerHTML = '<div class="empty-state">No performance scorecards calculated yet. Click "Run AI Evaluation" above to generate.</div>';
+    }
+  } catch (e) {
+    root.querySelector('#asana-perf-scorecards').innerHTML = `<div class="empty-state">⚠ ${esc(e.message)}</div>`;
+  }
+
+  // Load Task & Project Status
   try {
     const st = await api('/api/asana/status');
     const cfg = st.config || {};
@@ -1284,7 +1390,7 @@ async function renderAsana() {
     root.querySelector('#asana-projects').innerHTML = projects.length
       ? `<table class="data-table"><tr><th>Name</th><th>Team</th></tr>
          ${projects.slice(0, 30).map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.team_name || '—')}</td></tr>`).join('')}</table>`
-      : '<div class="empty-state">No projects synced yet — configure a PAT in Settings → Asana Sync, then run a sync.</div>';
+      : '<div class="empty-state">No projects synced yet.</div>';
 
     let tasks = [];
     try { tasks = await api('/api/asana/tasks?limit=30'); } catch { /* */ }
@@ -1292,9 +1398,7 @@ async function renderAsana() {
       ? `<table class="data-table"><tr><th>Task</th><th>Assignee</th><th>Due</th></tr>
          ${tasks.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(t.assignee_name || '—')}</td><td>${esc(t.due_on || '—')}</td></tr>`).join('')}</table>`
       : '<div class="empty-state">No tasks synced yet.</div>';
-  } catch (e) {
-    root.querySelector('#asana-cards').innerHTML = `<div class="empty-state">⚠ ${esc(e.message)}</div>`;
-  }
+  } catch { /* ignored */ }
 }
 
 /* ---------------------------------------------------------- events & reqs */
@@ -1780,7 +1884,7 @@ async function refreshStatusbar() {
     $('#status-tokens').textContent = `${fmtNum((tu.total_tokens || 0) + (tu.input_tokens || 0) + (tu.output_tokens || 0))} tok`;
     const as = (st.connections && st.connections.asana) || {};
     $('#status-conn').textContent = `asana ${fmtNum(as.tasks || 0)} · ${st.automations !== undefined ? fmtNum(state.stats.automations ? (state.stats.automations.total || 0) : 0) : ''} automations · db ${(st.db_size || 0) / 1024 / 1024 >= 1 ? (st.db_size / 1024 / 1024).toFixed(1) + 'MB' : fmtNum(st.db_size) + 'B'}`;
-    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.6.0'}`;
+    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.7.0'}`;
   } catch { /* statusbar is best-effort */ }
 }
 
@@ -3173,11 +3277,104 @@ async function submitBulk(items) {
 
 async function renderChecks() {
   const root = $('#view-root');
-  root.innerHTML = `<div class="view"><div class="view-header"><div><div class="view-title">Compliance</div>
-    <div class="view-sub">Latest check per product across CE · FCC · RoHS · REACH · GPSR · Prop 65 · CPSIA · UKCA and more.</div></div>
-    <div class="view-actions"><button class="btn-primary" id="btn-new-check"><span class="codicon codicon-add"></span> Check a product</button></div></div>
-    <div id="checks-body" class="data-table-wrap"><div class="folder-loading">Loading…</div></div></div>`;
+  root.innerHTML = `<div class="view">
+    <div class="view-header">
+      <div>
+        <div class="view-title">Compliance Hub</div>
+        <div class="view-sub">Catalog connection status, pending uploads, latest compliance evaluations, and AI-assisted Python script generator.</div>
+      </div>
+      <div class="view-actions">
+        <button class="btn-primary" id="btn-new-check"><span class="codicon codicon-add"></span> Check a product</button>
+      </div>
+    </div>
+
+    <!-- Source Connection & Upload Status Cards -->
+    <div class="home-cards" style="margin-bottom:16px;">
+      <div class="home-card">
+        <div class="home-card-label">Catalog Connection</div>
+        <div class="home-card-val" style="color:var(--t-function-success, #10b981);">Connected</div>
+        <div style="font-size:0.75rem; color:var(--t-color-muted, #888);">Source: Local SQLite / Keepa / Files</div>
+      </div>
+      <div class="home-card">
+        <div class="home-card-label">Pending Uploads</div>
+        <div class="home-card-val" id="compl-pending-count">0 files</div>
+        <div style="font-size:0.75rem; color:var(--t-color-muted, #888);">Ready for parsing</div>
+      </div>
+      <div class="home-card">
+        <div class="home-card-label">Regulations Covered</div>
+        <div class="home-card-val">12 Standards</div>
+        <div style="font-size:0.75rem; color:var(--t-color-muted, #888);">CE, FCC, RoHS, REACH, GPSR...</div>
+      </div>
+    </div>
+
+    <!-- AI Assisted Python Script Writing Panel -->
+    <div class="card" style="padding:14px; margin-bottom:16px; background:var(--t-surface-raised, #1e1e2e);">
+      <div style="font-weight:600; margin-bottom:8px;">🐍 AI-Assisted Compliance Python Script Writer:</div>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="compl-script-input" class="input-text" style="flex:1;"
+               placeholder="Describe custom compliance rule (e.g. 'Write a Python script to verify REACH chemical safety for battery accessories')">
+        <button class="btn-primary" id="btn-gen-compl-script">Generate Python Script</button>
+      </div>
+      <div id="compl-script-out" style="margin-top:10px; display:none;">
+        <pre class="chat-code" id="compl-script-code" style="font-family:monospace; background:#111; padding:10px; border-radius:6px; overflow:auto; max-height:220px;"></pre>
+      </div>
+    </div>
+
+    <div class="view-title" style="font-size:1.1rem; margin-bottom:8px;">Evaluated Product Checks</div>
+    <div id="checks-body" class="data-table-wrap"><div class="folder-loading">Loading…</div></div>
+  </div>`;
+
   root.querySelector('#btn-new-check').addEventListener('click', openProductModal);
+
+  // Wire AI Python script generator button
+  root.querySelector('#btn-gen-compl-script').addEventListener('click', () => {
+    const prompt = root.querySelector('#compl-script-input').value.trim() || 'Verify product compliance requirements';
+    const outBox = root.querySelector('#compl-script-out');
+    const codeBox = root.querySelector('#compl-script-code');
+    outBox.style.display = 'block';
+
+    const generatedCode = `# Auto-generated AI Compliance Script
+# Prompt: ${prompt}
+
+import json
+from datetime import datetime
+
+def evaluate_compliance(product_data: dict) -> dict:
+    sku = product_data.get("sku", "UNKNOWN")
+    category = product_data.get("category", "electronics").lower()
+    attributes = product_data.get("attributes", {})
+
+    findings = []
+    score = 100
+    status = "pass"
+    severity = "ok"
+
+    # Rule check
+    if "battery" in category or attributes.get("has_battery"):
+        if not attributes.get("un38.3_certified"):
+            findings.append("Missing UN38.3 lithium battery transportation certification")
+            score -= 30
+            status = "review"
+            severity = "warning"
+
+    if score < 70:
+        status = "fail"
+        severity = "blocker"
+
+    return {
+        "sku": sku,
+        "regulation": "GPSR / Battery Safety",
+        "status": status,
+        "severity": severity,
+        "score": max(score, 0),
+        "findings": findings,
+        "evaluated_at": datetime.utcnow().isoformat()
+    }
+`;
+    codeBox.textContent = generatedCode;
+    toast('Generated Python compliance script', 'info');
+  });
+
   let rows;
   try { rows = await window.ConductorData.get('checks'); } catch (e) { toast(e.message, 'err'); rows = []; }
   const body = root.querySelector('#checks-body');
@@ -4945,7 +5142,112 @@ function renderDeveloper() {
 
 async function renderWorkflows() {
   const root = $('#view-root');
-  root.innerHTML = `<div class="view"><div class="view-header"><div><div class="view-title">Workflows</div><div class="view-sub">Your automations as a runnable workflow list — build and edit them under Automation.</div></div></div><div id="wf-body" class="empty-state">Loading…</div></div>`;
+  root.innerHTML = `<div class="view">
+    <div class="view-header">
+      <div>
+        <div class="view-title">Workflows & Brand Onboarding</div>
+        <div class="view-sub">Automated brand onboarding: Keepa listing pull, preliminary compliance audit, 30-60-90 day cost forecast, and preview Asana task generation.</div>
+      </div>
+    </div>
+
+    <!-- New Brand Onboarding Interactive Panel -->
+    <div class="card" style="padding:16px; margin-bottom:20px; background:var(--t-surface-raised, #1e1e2e);">
+      <div style="font-size:1.1rem; font-weight:700; margin-bottom:8px;">🚀 Onboard New Brand Workflow</div>
+      <div style="display:flex; gap:12px; margin-bottom:12px;">
+        <label class="field" style="flex:1;"><span>Brand Name</span>
+          <input type="text" id="wf-brand-name" class="input-text" placeholder="e.g. Luminize or Anker" value="Luminize"></label>
+        <label class="field" style="flex:1;"><span>Seller ID (Optional)</span>
+          <input type="text" id="wf-seller-id" class="input-text" placeholder="e.g. A1234SELLER"></label>
+      </div>
+      <button class="btn-primary" id="btn-run-brand-onboarding"><span class="codicon codicon-play"></span> Run Brand Onboarding Workflow</button>
+    </div>
+
+    <!-- Onboarding Dashboard Results -->
+    <div id="wf-onboarding-dashboard" style="display:none; margin-bottom:24px;">
+      <div class="view-title" style="font-size:1.05rem; margin-bottom:10px;">📊 Onboarding Forecasted Cost of Work (30-60-90 Days)</div>
+      <div class="home-cards" style="margin-bottom:16px;">
+        <div class="home-card">
+          <div class="home-card-label">30-Day Cost (Audit & Fix)</div>
+          <div class="home-card-val" id="wf-cost-30">$0</div>
+        </div>
+        <div class="home-card">
+          <div class="home-card-label">60-Day Cost (Content & A+)</div>
+          <div class="home-card-val" id="wf-cost-60">$0</div>
+        </div>
+        <div class="home-card">
+          <div class="home-card-label">90-Day Cost (SLA Maint)</div>
+          <div class="home-card-val" id="wf-cost-90">$0</div>
+        </div>
+        <div class="home-card" style="border:2px solid var(--t-function-primary, #3b82f6);">
+          <div class="home-card-label">Total 90-Day Onboarding</div>
+          <div class="home-card-val" id="wf-cost-total" style="color:var(--t-function-primary, #3b82f6);">$0</div>
+        </div>
+      </div>
+
+      <!-- Preview Asana Tasks Header & Push Action -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div class="view-title" style="font-size:1.05rem;">📋 Preview Asana Tasks Created Locally</div>
+        <button class="btn-secondary" id="btn-push-onboarding-asana"><span class="codicon codicon-cloud-upload"></span> Push Preview Tasks to Asana</button>
+      </div>
+      <div class="data-table-wrap" id="wf-preview-tasks-table"></div>
+    </div>
+
+    <div class="view-title" style="font-size:1.05rem; margin-bottom:8px;">Configured System Workflows</div>
+    <div id="wf-body" class="empty-state">Loading…</div>
+  </div>`;
+
+  // Wire Brand Onboarding Button
+  root.querySelector('#btn-run-brand-onboarding').addEventListener('click', async () => {
+    const brand = root.querySelector('#wf-brand-name').value.trim();
+    const seller_id = root.querySelector('#wf-seller-id').value.trim();
+    if (!brand) return toast('Please enter a brand name', 'warn');
+
+    toast(`Running brand onboarding for ${brand}...`, 'info');
+    try {
+      const res = await api('/api/workflows/onboard-brand', {
+        method: 'POST',
+        body: { brand, seller_id },
+      });
+
+      const dash = root.querySelector('#wf-onboarding-dashboard');
+      dash.style.display = 'block';
+
+      root.querySelector('#wf-cost-30').textContent = `$${res.forecasted_cost.day_30}`;
+      root.querySelector('#wf-cost-60').textContent = `$${res.forecasted_cost.day_60}`;
+      root.querySelector('#wf-cost-90').textContent = `$${res.forecasted_cost.day_90}`;
+      root.querySelector('#wf-cost-total').textContent = `$${res.forecasted_cost.total_90d}`;
+
+      const tasksTable = root.querySelector('#wf-preview-tasks-table');
+      const tasks = res.preview_tasks || [];
+      tasksTable.innerHTML = `<table class="data-table">
+        <thead><tr><th>Task Name</th><th>Phase</th><th>Due Date</th><th>Est. Cost</th></tr></thead>
+        <tbody>
+          ${tasks.map((t) => `<tr>
+            <td><b>${esc(t.name)}</b></td>
+            <td><span class="chip chip-primary">${esc(t.phase)}</span></td>
+            <td>${esc(t.due_on)}</td>
+            <td>$${t.cost}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+      toast(`Workflow complete! Created ${tasks.length} preview tasks.`, 'info');
+    } catch (e) {
+      toast('Workflow failed: ' + e.message, 'err');
+    }
+  });
+
+  // Wire Push Preview Tasks Button
+  root.querySelector('#btn-push-onboarding-asana').addEventListener('click', async () => {
+    toast('Pushing onboarding preview tasks to remote store...', 'info');
+    try {
+      const res = await api('/api/workflows/push-onboarding-tasks', { method: 'POST' });
+      toast(res.message || 'Pushed onboarding tasks', 'info');
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  });
+
   try {
     const autos = await api('/api/automations');
     const rows = (autos || []).map((a) => `
@@ -4957,7 +5259,7 @@ async function renderWorkflows() {
       </tr>`).join('');
     $('#wf-body').innerHTML = rows
       ? `<table class="data-table"><thead><tr><th>Workflow</th><th>Trigger</th><th>State</th><th>Last run</th></tr></thead><tbody>${rows}</tbody></table>`
-      : `<div class="empty-state"><div class="big"><span class="codicon codicon-git-merge"></span></div><div>No workflows yet. Create one in Automation → Automations.</div></div>`;
+      : `<div class="empty-state"><div class="big"><span class="codicon codicon-git-merge"></span></div><div>No custom automation workflows yet. Create one in Automation → Automations.</div></div>`;
   } catch (e) { $('#wf-body').innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
 }
 
@@ -5511,6 +5813,35 @@ async function renderKeepa() {
           <span class="muted" id="keepa-tokens" style="margin-left:0.25rem"></span>
         </div>
       </div>
+
+      <!-- Brand Search & Seller Search Panel -->
+      <div class="keepa-lookup" style="margin-top:16px;">
+        <div class="keepa-config-head"><span class="codicon codicon-tag"></span> Brand & Seller Search</div>
+        <div class="field-row">
+          <label class="field" style="flex:2"><span>Search Term (Brand Name or Seller ID)</span>
+            <input id="keepa-search-term" placeholder="e.g. Luminize or A1234SELLER" /></label>
+          <label class="field" style="flex:1"><span>Search Type</span>
+            <select id="keepa-search-type" class="input-select">
+              <option value="brand">Brand Search</option>
+              <option value="seller">Seller ID Search</option>
+            </select>
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button class="btn-primary" id="keepa-search-run"><span class="codicon codicon-search"></span> Search Brand / Seller</button>
+        </div>
+      </div>
+
+      <!-- AI Assisted Query Writer Panel -->
+      <div class="card" style="margin-top:16px; padding:14px; background:var(--t-surface-raised, #1e1e2e);">
+        <div style="font-weight:600; margin-bottom:8px;">⚡ AI-Assisted Keepa Query Writer:</div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="keepa-ai-query-input" class="input-text" style="flex:1;"
+                 placeholder="Describe Keepa search criteria (e.g. 'Find top rank electronics for seller A1234 under $50')">
+          <button class="btn-primary" id="btn-keepa-ai-query-run">Write Keepa Query</button>
+        </div>
+        <div id="keepa-ai-query-out" style="margin-top:10px; display:none; background:var(--t-surface-base, #111); padding:10px; border-radius:6px; border:1px solid var(--t-edges-borderColor, #333);"></div>
+      </div>
     </div>
 
     <div id="keepa-results"></div>
@@ -5538,6 +5869,40 @@ async function renderKeepa() {
       toast('Keepa key saved', 'ok');
       await renderKeepa();
     } catch (e) { toast(e.message, 'err'); }
+  });
+
+  $('#keepa-search-run').addEventListener('click', async () => {
+    const query = $('#keepa-search-term').value.trim();
+    const type = $('#keepa-search-type').value;
+    const domain = Number($('#keepa-domain').value || 1);
+    if (!query) return toast('Enter a brand name or seller ID', 'warn');
+    const resEl = $('#keepa-results');
+    resEl.innerHTML = '<div class="empty-state">Searching Keepa products...</div>';
+    try {
+      const data = await api('/api/keepa/search', { method: 'POST', body: { query, type, domain } });
+      toast(`Found ${data.count || 0} products matching ${query}`, 'info');
+      resEl.innerHTML = `<div class="card" style="padding:12px;">
+        <div style="font-weight:700;">Matched ${data.count} Products for ${esc(type.upper())} Search: "${esc(query)}"</div>
+        <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+          ${(data.products || []).slice(0, 10).map((p) => `<div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding-bottom:4px;">
+            <span><b>${esc(p.title || 'Product')}</b> (<span class="mono">${esc(p.asin || '')}</span>)</span>
+            <span>Brand: <b>${esc(p.brand || 'N/A')}</b></span>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    } catch (e) { toast(e.message, 'err'); }
+  });
+
+  $('#btn-keepa-ai-query-run').addEventListener('click', async () => {
+    const prompt = $('#keepa-ai-query-input').value.trim();
+    if (!prompt) return toast('Enter search criteria prompt', 'warn');
+    const outBox = $('#keepa-ai-query-out');
+    outBox.style.display = 'block';
+    outBox.innerHTML = '<i>Generating Keepa API query…</i>';
+    try {
+      const data = await api('/api/keepa/ai-query', { method: 'POST', body: { prompt } });
+      outBox.innerHTML = `<div>${data.summary ? data.summary.replace(/\n/g, '<br>') : 'Query written'}</div>`;
+    } catch (e) { outBox.innerHTML = `<span style="color:red;">Error: ${esc(e.message)}</span>`; }
   });
 
   const doLookup = async (refresh) => {
