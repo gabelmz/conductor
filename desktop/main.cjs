@@ -164,7 +164,41 @@ const LOADING_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Co
   }
 </script></body></html>`;
 
+// ---------------------------------------------------------------------------
+// Single-Instance Lock & Window Rate Limiting (1 window max per 60s)
+// ---------------------------------------------------------------------------
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+}
+
+let lastWindowCreationTime = 0;
+const WINDOW_RATE_LIMIT_MS = 60000; // 60s rate limit per window creation
+
 function createWindow() {
+  const now = Date.now();
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    return win;
+  }
+
+  // Rate limit: Enforce maximum of 1 window creation every 60 seconds
+  if (now - lastWindowCreationTime < WINDOW_RATE_LIMIT_MS && win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    return win;
+  }
+
+  lastWindowCreationTime = now;
+
   win = new BrowserWindow({
     width: 1320,
     height: 860,
@@ -189,6 +223,7 @@ function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+  return win;
 }
 
 // --- window controls -------------------------------------------------------
@@ -360,6 +395,12 @@ app.whenReady().then(async () => {
       dialog.showErrorBox('Conductor', `Failed to start backend:\n${err2.message}`);
       app.quit();
     }
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
   }
 });
 
