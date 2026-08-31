@@ -1804,11 +1804,25 @@ async function renderSettingsTab(tab) {
           <div class="about-item"><div class="a-label">Uptime</div><div class="a-value mono">${esc(String(a.uptime_s || '—'))}s</div></div>
         </div>
         <div class="settings-section" style="margin-top:0.75rem">
-          <div class="settings-title"><span class="codicon codicon-cloud-download"></span> Software update</div>
-          <div class="settings-note" id="upd-status">${canUpdate ? 'Updates are checked automatically at launch.' : 'Running the dev build — updates apply only to the installed app.'}</div>
-          <div class="settings-actions">
+          <div class="settings-title"><span class="codicon codicon-cloud-download"></span> Software update & Version Management</div>
+          <div class="settings-note" id="upd-status">${canUpdate ? 'Updates are checked automatically at launch.' : 'Running dev / current build (v1.7.0).'}</div>
+          
+          <div class="settings-actions" style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
             <button class="btn-primary" id="btn-check-updates"><span class="codicon codicon-refresh"></span> Check for updates</button>
             <button class="btn-primary" id="btn-install-update" ${state.updateReady.ready ? '' : 'hidden'}><span class="codicon codicon-cloud-upload"></span> Restart &amp; install</button>
+          </div>
+
+          <div style="margin-top:12px; border-top:1px solid var(--t-edges-borderColor, #333); padding-top:10px;">
+            <div style="font-weight:600; margin-bottom:6px; font-size:0.85rem;">Available Versions & Rollback:</div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <select id="upd-version-select" class="input-select" style="flex:1;">
+                <option value="1.7.0">v1.7.0 (Current / Latest)</option>
+                <option value="1.6.0">v1.6.0</option>
+                <option value="1.5.0">v1.5.0</option>
+                <option value="1.4.0">v1.4.0</option>
+              </select>
+              <button class="btn-secondary" id="btn-rollback-version"><span class="codicon codicon-history"></span> Rollback / Switch Version</button>
+            </div>
           </div>
         </div>
         <div class="settings-note" style="margin-top:0.75rem">Four pillars: process discovery · automation infrastructure · AI integration · SOPs &amp; governance. Built on the parker desktop skeleton (Electron + FastAPI + SQLite + llama.cpp).</div>
@@ -1846,6 +1860,37 @@ async function renderSettingsTab(tab) {
     });
     box.querySelector('#btn-install-update').addEventListener('click', () => {
       if (window.desktop && window.desktop.installUpdate) window.desktop.installUpdate();
+    });
+
+    // Populate version selector from backend updates API
+    (async () => {
+      try {
+        const vData = await api('/api/updates/versions');
+        const select = box.querySelector('#upd-version-select');
+        if (select && vData && vData.versions && vData.versions.length) {
+          select.innerHTML = vData.versions.map((v) =>
+            `<option value="${esc(v.version)}">v${esc(v.version)}${v.version === vData.current_version ? ' (Current / Latest)' : ''}</option>`
+          ).join('');
+        }
+      } catch { /* ignored */ }
+    })();
+
+    // Wire Rollback Button
+    box.querySelector('#btn-rollback-version').addEventListener('click', async () => {
+      const select = box.querySelector('#upd-version-select');
+      const targetVersion = select ? select.value : '1.6.0';
+      if (!confirm(`Rollback / switch application version target to v${targetVersion}?`)) return;
+
+      try {
+        const res = await api('/api/updates/rollback', {
+          method: 'POST',
+          body: { target_version: targetVersion },
+        });
+        toast(res.message || `Set version target to v${targetVersion}`, 'info');
+        setStatus(`Version target set to v${targetVersion}. Restart to apply.`);
+      } catch (e) {
+        toast('Rollback failed: ' + e.message, 'err');
+      }
     });
     return;
   }

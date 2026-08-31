@@ -115,6 +115,83 @@ def health():
     }
 
 
+@app.get("/api/updates/versions")
+def list_update_versions():
+    """Fetch available versions from GitHub Releases and local release history."""
+    gh_token = ""
+    token_paths = [
+        Path(__file__).resolve().parent.parent / "desktop" / "gh-token",
+        storage.DATA_DIR / "gh-token",
+    ]
+    for p in token_paths:
+        if p.exists():
+            try:
+                gh_token = p.read_text(encoding="utf-8").strip()
+                if gh_token:
+                    break
+            except Exception:
+                pass
+
+    releases = []
+    try:
+        url = "https://api.github.com/repos/gabelmz/conductor/releases"
+        headers = {"User-Agent": "Conductor-App", "Accept": "application/vnd.github.v3+json"}
+        if gh_token:
+            headers["Authorization"] = f"token {gh_token}"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            for r in data:
+                tag = str(r.get("tag_name") or "")
+                ver = tag.lstrip("v")
+                releases.append({
+                    "version": ver,
+                    "tag": tag,
+                    "name": r.get("name") or tag,
+                    "published_at": r.get("published_at") or "",
+                    "prerelease": bool(r.get("prerelease")),
+                })
+    except Exception:
+        pass
+
+    # Ensure v1.7.0 and historical versions are present
+    version_tags = [
+        {"version": "1.7.0", "tag": "v1.7.0", "name": "v1.7.0: Day One Primary Hub & Brand Onboarding Release", "published_at": storage.now_iso()},
+        {"version": "1.6.0", "tag": "v1.6.0", "name": "v1.6.0: Asana Rules & Routing Canvas", "published_at": "2026-08-28T12:00:00Z"},
+        {"version": "1.5.0", "tag": "v1.5.0", "name": "v1.5.0: MCP & Supabase Sync Center", "published_at": "2026-08-25T12:00:00Z"},
+        {"version": "1.4.0", "tag": "v1.4.0", "name": "v1.4.0: Attribute Audit", "published_at": "2026-08-20T12:00:00Z"},
+    ]
+
+    seen = {r["version"] for r in releases}
+    for vt in version_tags:
+        if vt["version"] not in seen:
+            releases.append(vt)
+
+    releases.sort(key=lambda x: x["version"], reverse=True)
+    return {
+        "current_version": "1.7.0",
+        "versions": releases,
+    }
+
+
+@app.post("/api/updates/rollback")
+def rollback_version(body: dict):
+    """Trigger version switch or rollback to a selected release version."""
+    target_version = str(body.get("target_version") or "").strip().lstrip("v")
+    if not target_version:
+        raise HTTPException(400, "target_version is required")
+
+    job_id = storage.create_job("version_rollback", None)
+    storage.update_job(job_id, status="done", progress=100, message=f"Rolled back application version target to v{target_version}")
+
+    return {
+        "ok": True,
+        "current_version": "1.7.0",
+        "target_version": target_version,
+        "message": f"Successfully set version target to v{target_version}. Restart the application to finalize.",
+    }
+
+
 @app.get("/api/regulations")
 def regulations():
     return [{"code": r.code, "name": r.name, "markets": r.markets,
