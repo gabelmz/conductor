@@ -48,8 +48,8 @@ const META_LIGHT = {
   blur: { backdrop: 18 },
 };
 
-const HEADER_FONT = { family: 'Inter Tight, sans-serif', weight: 650, tracking: '-0.02em' };
-const BODY_FONT = { family: 'Inter, sans-serif', weight: 400, size: 15, lineHeight: 1.55 };
+const HEADER_FONT = { family: "'Space Grotesk', 'HK Grotesk', 'Inter', system-ui, sans-serif", weight: 650, tracking: '-0.02em' };
+const BODY_FONT = { family: "'Space Grotesk', 'HK Grotesk', 'Inter', system-ui, sans-serif", weight: 400, size: 15, lineHeight: 1.55 };
 const CODE_FONT_DEFAULT = { family: 'JetBrains Mono, monospace', size: 13, ligatures: true };
 
 function toRgba(v, a) {
@@ -292,8 +292,8 @@ const THEME_DEFAULTS = {
     },
     depth: { perspective: 1200, layerOffset: 8, innerShadow: 'inset 0 2px 8px rgba(15,23,42,0.08)' },
     gloss: { intensity: 0.18, angle: 115, sheen: 'rgba(255,255,255,0.9)', blend: 'overlay' },
-    headerFont: { family: 'Inter Tight, sans-serif', weight: 650, tracking: '-0.02em' },
-    bodyFont: { family: 'Inter, sans-serif', weight: 400, size: 15, lineHeight: 1.55 },
+    headerFont: { family: "'Space Grotesk', 'HK Grotesk', 'Inter', system-ui, sans-serif", weight: 650, tracking: '-0.02em' },
+    bodyFont: { family: "'Space Grotesk', 'HK Grotesk', 'Inter', system-ui, sans-serif", weight: 400, size: 15, lineHeight: 1.55 },
     codeFont: { family: 'JetBrains Mono, monospace', size: 13, ligatures: true },
     colorFont: { heading: '#17171A', body: '#17171A', muted: '#666678', link: '#0053FD', code: '#242432' },
     motion: { duration: 200, easing: 'cubic-bezier(0.2,0,0,1)' },

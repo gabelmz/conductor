@@ -36,10 +36,10 @@ app.whenReady().then(async () => {
     await q(`localStorage.clear(); location.reload()`);
     await new Promise((r) => setTimeout(r, 2500));
 
-    // ---- sidebar renders data-driven, with the Commerce Hub sections
+    // ---- sidebar renders data-driven, with the Day One Hub sections
     const sections = await q(`[...document.querySelectorAll('#sidebar-scroll .sidebar-section-label')].map(l => l.textContent.trim())`);
-    const wantSections = ['Core', 'Departments', 'Operations', 'Platforms', 'Catalog', 'Automation', 'AI', 'Knowledge', 'Platform'];
-    check('sidebar: all 9 sections present in order', wantSections.every((s, i) => sections[i] === s), sections.join(' > '));
+    const wantSections = ['Primary', 'Analytics & Data', 'Marketplace Platforms', 'Automation & AI', 'Operations'];
+    check('sidebar: all 5 sections present in order', wantSections.every((s, i) => sections[i] === s), sections.join(' > '));
     check('sidebar: item count >= 40', await q(`document.querySelectorAll('#sidebar-scroll .sidebar-item').length >= 40`),
       await q(`String(document.querySelectorAll('#sidebar-scroll .sidebar-item').length)`));
 
@@ -83,18 +83,18 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 600));
     check('nav settings: preset picker renders', await q(`!!document.querySelector('#nav-preset') && document.querySelectorAll('#nav-preset option').length >= 4`),
       await q(`String(document.querySelectorAll('#nav-preset option').length)`));
-    check('nav settings: section cards render', await q(`document.querySelectorAll('.nav-section-card').length >= 9`),
+    check('nav settings: section cards render', await q(`document.querySelectorAll('.nav-section-card').length >= 5`),
       await q(`String(document.querySelectorAll('.nav-section-card').length)`));
 
     // ---- preset switch actually restructures the sidebar
     await q(`(() => { const s = document.querySelector('#nav-preset'); s.value = 'functional'; s.dispatchEvent(new Event('change')); })()`);
     await new Promise((r) => setTimeout(r, 500));
     const afterSections = await q(`[...document.querySelectorAll('#sidebar-scroll .sidebar-section-label')].map(l => l.textContent.trim())`);
-    check('nav settings: functional preset drops Departments/marketplaces', !afterSections.includes('Departments') && !afterSections.includes('Platforms') && afterSections.includes('Catalog'), afterSections.join(' > '));
+    check('nav settings: functional preset drops Primary/Marketplace Platforms', !afterSections.includes('Primary') && !afterSections.includes('Marketplace Platforms') && afterSections.includes('Analytics & Data'), afterSections.join(' > '));
     // reset back to default
     await q(`document.querySelector('#nav-reset').click()`);
     await new Promise((r) => setTimeout(r, 500));
-    check('nav settings: reset restores Commerce Hub', await q(`[...document.querySelectorAll('#sidebar-scroll .sidebar-section-label')].map(l => l.textContent.trim()).includes('Departments')`));
+    check('nav settings: reset restores Day One Hub', await q(`[...document.querySelectorAll('#sidebar-scroll .sidebar-section-label')].map(l => l.textContent.trim()).includes('Primary')`));
     await q(`document.querySelector('#btn-settings-close').click()`);
 
     // ---- SvL flow against live data (API-level, confirms fuzzy matching)

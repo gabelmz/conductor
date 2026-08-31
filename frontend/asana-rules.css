@@ -7,7 +7,7 @@
 .ar-view {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   background: var(--ar-bg, #f6f6f7); color: var(--ar-fg, #111114);
-  font-family: Inter, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Space Grotesk', 'HK Grotesk', 'Inter', system-ui, sans-serif;
   --ar-card: #ffffff; --ar-muted: #6b6b76; --ar-border: #e3e3e8; --ar-accent: #2563eb;
   --ar-radius: 4px; --ar-shadow: 3px 3px 0 rgba(17,17,20,.14); --ar-borderw: 2px;
 }
