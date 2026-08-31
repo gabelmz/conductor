@@ -1805,7 +1805,7 @@ async function renderSettingsTab(tab) {
         </div>
         <div class="settings-section" style="margin-top:0.75rem">
           <div class="settings-title"><span class="codicon codicon-cloud-download"></span> Software update & Version Management</div>
-          <div class="settings-note" id="upd-status">${canUpdate ? 'Updates are checked automatically at launch.' : 'Running dev / current build (v1.7.0).'}</div>
+          <div class="settings-note" id="upd-status">${canUpdate ? 'Updates are checked automatically at launch.' : 'Running dev / current build (v1.9.5).'}</div>
           
           <div class="settings-actions" style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
             <button class="btn-primary" id="btn-check-updates"><span class="codicon codicon-refresh"></span> Check for updates</button>
@@ -1816,7 +1816,8 @@ async function renderSettingsTab(tab) {
             <div style="font-weight:600; margin-bottom:6px; font-size:0.85rem;">Available Versions & Rollback:</div>
             <div style="display:flex; gap:8px; align-items:center;">
               <select id="upd-version-select" class="input-select" style="flex:1;">
-                <option value="1.7.0">v1.7.0 (Current / Latest)</option>
+                <option value="1.9.5">v1.9.5 (Current / Latest)</option>
+                <option value="1.7.0">v1.7.0</option>
                 <option value="1.6.0">v1.6.0</option>
                 <option value="1.5.0">v1.5.0</option>
                 <option value="1.4.0">v1.4.0</option>
@@ -1929,7 +1930,7 @@ async function refreshStatusbar() {
     $('#status-tokens').textContent = `${fmtNum((tu.total_tokens || 0) + (tu.input_tokens || 0) + (tu.output_tokens || 0))} tok`;
     const as = (st.connections && st.connections.asana) || {};
     $('#status-conn').textContent = `asana ${fmtNum(as.tasks || 0)} · ${st.automations !== undefined ? fmtNum(state.stats.automations ? (state.stats.automations.total || 0) : 0) : ''} automations · db ${(st.db_size || 0) / 1024 / 1024 >= 1 ? (st.db_size / 1024 / 1024).toFixed(1) + 'MB' : fmtNum(st.db_size) + 'B'}`;
-    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.7.0'}`;
+    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.9.5'}`;
   } catch { /* statusbar is best-effort */ }
 }
 

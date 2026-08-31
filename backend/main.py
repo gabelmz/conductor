@@ -64,7 +64,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.7.0",
+    version="1.9.5",
 )
 
 app.add_middleware(
@@ -110,7 +110,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "1.7.0",
+        "version": "1.9.5",
         "products": storage.count_products(),
     }
 
@@ -154,9 +154,10 @@ def list_update_versions():
     except Exception:
         pass
 
-    # Ensure v1.7.0 and historical versions are present
+    # Ensure v1.9.5 and historical versions are present
     version_tags = [
-        {"version": "1.7.0", "tag": "v1.7.0", "name": "v1.7.0: Day One Primary Hub & Brand Onboarding Release", "published_at": storage.now_iso()},
+        {"version": "1.9.5", "tag": "v1.9.5", "name": "v1.9.5: Day One Primary Hub & Brand Onboarding Release", "published_at": storage.now_iso()},
+        {"version": "1.7.0", "tag": "v1.7.0", "name": "v1.7.0: Performance Hub & DataWrangler", "published_at": "2026-08-31T19:55:00Z"},
         {"version": "1.6.0", "tag": "v1.6.0", "name": "v1.6.0: Asana Rules & Routing Canvas", "published_at": "2026-08-28T12:00:00Z"},
         {"version": "1.5.0", "tag": "v1.5.0", "name": "v1.5.0: MCP & Supabase Sync Center", "published_at": "2026-08-25T12:00:00Z"},
         {"version": "1.4.0", "tag": "v1.4.0", "name": "v1.4.0: Attribute Audit", "published_at": "2026-08-20T12:00:00Z"},
@@ -169,7 +170,7 @@ def list_update_versions():
 
     releases.sort(key=lambda x: x["version"], reverse=True)
     return {
-        "current_version": "1.7.0",
+        "current_version": "1.9.5",
         "versions": releases,
     }
 
@@ -186,7 +187,7 @@ def rollback_version(body: dict):
 
     return {
         "ok": True,
-        "current_version": "1.7.0",
+        "current_version": "1.9.5",
         "target_version": target_version,
         "message": f"Successfully set version target to v{target_version}. Restart the application to finalize.",
     }
@@ -825,7 +826,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "1.7.0",
+        "version": "1.9.5",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,
