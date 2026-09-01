@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Permanent pre-push guard for the conductor repo (wired via core.hooksPath).
+#
+# Rule: refs/heads/main is RELEASE-ONLY. A push to main is allowed only when
+#   (a) the same push also carries a refs/tags/v* tag, or
+#   (b) the pushed commit is exactly tagged v* locally (git describe).
+# Every other branch (staging, features) pushes normally — that is the default.
+# Violators are blocked with a hint to push to staging instead.
+
+set -u
+
+declare -a lines
+while IFS= read -r line; do lines+=("$line"); done
+[ ${#lines[@]} -eq 0 ] && exit 0
+
+pushing_main=0
+tag_in_push=0
+main_sha=""
+
+for line in "${lines[@]}"; do
+  local_ref=$(echo "$line" | awk '{print $1}')
+  local_sha=$(echo "$line" | awk '{print $2}')
+  remote_ref=$(echo "$line" | awk '{print $3}')
+  case "$local_ref" in
+    refs/heads/main) pushing_main=1; main_sha="$local_sha" ;;
+    refs/tags/v*)    tag_in_push=1 ;;
+  esac
+done
+
+if [ "$pushing_main" = "1" ] && [ "$tag_in_push" = "0" ]; then
+  if git describe --tags --exact-match "$main_sha" >/dev/null 2>&1 \
+     && git describe --tags --exact-match "$main_sha" | grep -q '^v'; then
+    exit 0
+  fi
+  echo ""
+  echo "⛔ main is release-only: this push has no v* release tag (and HEAD is not tagged)."
+  echo "   Defaulting to staging — push your branch there instead:"
+  echo "      git push origin HEAD:staging"
+  echo ""
+  exit 1
+fi
+
+exit 0
