@@ -159,7 +159,7 @@ const VIEW_RENDERERS = {
   customerservice: () => renderModuleStub('customerservice'),
   brands: () => renderModuleStub('brands'),
   people: () => window.ConductorPeople.render(),
-  listings: () => renderModuleStub('listings'),
+  listings: () => renderListings(),
   walmart: () => renderModuleStub('walmart'),
   tiktok: () => renderModuleStub('tiktok'),
   target: () => renderModuleStub('target'),
@@ -209,6 +209,7 @@ function wireShell() {
     const btn = e.target.closest('.sidebar-item[data-view]');
     if (!btn) return;
     const view = btn.dataset.view;
+    if (view === 'settings') { openSettings(); return; }
     if (view.startsWith('url:')) window.open(view.slice(4), '_blank', 'noopener');
     else showView(view);
   });
@@ -1269,11 +1270,14 @@ async function renderAsana() {
 
     <!-- View Mode Switcher -->
     <div style="display:flex; gap:10px; margin-bottom:16px; border-bottom:1px solid var(--t-edges-borderColor, #333); padding-bottom:10px;">
-      <button class="btn-primary" id="btn-tab-perf">📈 Performance Dashboard</button>
+      <button class="btn-primary" id="btn-tab-team-kpis">📊 Team KPI Dashboard</button>
+      <button class="btn-secondary" id="btn-tab-perf">⚠ Legacy Scorecards</button>
       <button class="btn-secondary" id="btn-tab-tasks">📋 Projects & Tasks</button>
     </div>
 
-    <div id="asana-perf-panel">
+    <div id="asana-team-kpi-panel"><div id="asana-team-kpi-controls" class="field-row"></div><div id="asana-team-kpi-table" class="data-table-wrap"><div class="folder-loading">Loading team KPI facts…</div></div></div>
+
+    <div id="asana-perf-panel" style="display:none">
       <!-- AI Assisted Performance Eval Card -->
       <div class="card" style="padding:14px; margin-bottom:16px; background:var(--t-surface-raised, #1e1e2e);">
         <div style="font-weight:600; margin-bottom:8px;">⚡ AI-Assisted Employee Performance Evaluator:</div>
@@ -1306,19 +1310,41 @@ async function renderAsana() {
     }
   } catch { /* ignored */ }
 
-  // Wire Tab Buttons
-  root.querySelector('#btn-tab-perf').addEventListener('click', () => {
-    root.querySelector('#asana-perf-panel').style.display = 'block';
-    root.querySelector('#asana-tasks-panel').style.display = 'none';
-    root.querySelector('#btn-tab-perf').className = 'btn-primary';
-    root.querySelector('#btn-tab-tasks').className = 'btn-secondary';
-  });
-  root.querySelector('#btn-tab-tasks').addEventListener('click', () => {
-    root.querySelector('#asana-perf-panel').style.display = 'none';
-    root.querySelector('#asana-tasks-panel').style.display = 'block';
-    root.querySelector('#btn-tab-perf').className = 'btn-secondary';
-    root.querySelector('#btn-tab-tasks').className = 'btn-primary';
-  });
+  // View tabs: team KPIs are the authoritative app report; owner scorecards are legacy workbook context.
+  const setAsanaTab = (tab) => {
+    root.querySelector('#asana-team-kpi-panel').style.display = tab === 'team' ? 'block' : 'none';
+    root.querySelector('#asana-perf-panel').style.display = tab === 'perf' ? 'block' : 'none';
+    root.querySelector('#asana-tasks-panel').style.display = tab === 'tasks' ? 'block' : 'none';
+    root.querySelector('#btn-tab-team-kpis').className = tab === 'team' ? 'btn-primary' : 'btn-secondary';
+    root.querySelector('#btn-tab-perf').className = tab === 'perf' ? 'btn-primary' : 'btn-secondary';
+    root.querySelector('#btn-tab-tasks').className = tab === 'tasks' ? 'btn-primary' : 'btn-secondary';
+  };
+  root.querySelector('#btn-tab-team-kpis').addEventListener('click', () => setAsanaTab('team'));
+  root.querySelector('#btn-tab-perf').addEventListener('click', () => setAsanaTab('perf'));
+  root.querySelector('#btn-tab-tasks').addEventListener('click', () => setAsanaTab('tasks'));
+
+  const teamControl = root.querySelector('#asana-team-kpi-controls');
+  const teamTable = root.querySelector('#asana-team-kpi-table');
+  teamControl.innerHTML = `<label class="field"><span>Metric</span><select id="asana-kpi-metric"><option value="count_completed">Tasks Completed</option><option value="count_tasks">Tasks Created</option><option value="weighted_completions">Weighted Completions</option><option value="completion_rate">Task Completion Rate</option><option value="sla_adherence">Internal SLA</option><option value="avg_cycle_time_days">Average Time to Close</option><option value="overdue_count">Overdue Tasks</option><option value="overdue_rate">Overdue Tasks %</option><option value="sla_missed_count">Initial SLA Missed</option></select></label><label class="field"><span>View</span><select id="asana-kpi-grain"><option value="week">Weekly (Sun–Sat)</option><option value="month">Monthly</option></select></label><button class="btn-primary" id="btn-asana-kpi-run" style="align-self:flex-end"><span class="codicon codicon-refresh"></span> Refresh Table</button>`;
+  const loadTeamKpis = async () => {
+    teamTable.innerHTML = '<div class="folder-loading">Computing team KPI pivot…</div>';
+    try {
+      const metric = root.querySelector('#asana-kpi-metric').value;
+      const grain = root.querySelector('#asana-kpi-grain').value;
+      const data = await api('/api/asana/kpis/pivot', { method: 'POST', body: { metric, row_dimension: 'team', column_dimension: grain, period_grain: grain } });
+      const cols = data.column_keys || []; const rows = data.row_keys || [];
+      const byCell = new Map((data.cells || []).map((c) => [`${c.row}|${c.column}`, c]));
+      const fmt = (c) => { if (!c || c.value == null) return 'N/A'; if (data.metric.unit.includes('percent')) return `${(c.value * 100).toFixed(1)}%`; return Number(c.value).toFixed(data.metric.unit === 'days' ? 1 : 0); };
+      teamTable.innerHTML = `<div class="settings-note">Team-first membership attribution · ${esc(data.metric.label)} · click a value for exact task drilldown.</div><table class="data-table" style="margin-top:0.5rem"><thead><tr><th>Team</th>${cols.map((c) => `<th class="mono">${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr><td><b>${esc(r)}</b></td>${cols.map((c) => { const cell = byCell.get(`${r}|${c}`); return `<td>${cell ? `<button class="btn-secondary btn-sm asana-kpi-cell" data-team="${esc(r)}" data-period="${esc(c)}" style="min-width:64px">${fmt(cell)}</button>` : '—'}</td>`; }).join('')}</tr>`).join('') || '<tr><td class="empty-state" colspan="2">No synced team KPI facts for this metric and period.</td></tr>'}</tbody></table>`;
+      teamTable.querySelectorAll('.asana-kpi-cell').forEach((button) => button.addEventListener('click', async () => {
+        const detail = await api('/api/asana/kpis/drilldown', { method: 'POST', body: { metric, team: button.dataset.team, period_grain: grain, period_start: button.dataset.period, date_basis: data.date_basis } });
+        const rows = detail.records || [];
+        openModal(`KPI Drilldown — ${button.dataset.team} / ${button.dataset.period}`, `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Task</th><th>Project</th><th>Assignee</th><th>Created</th><th>Completed</th><th>Due</th></tr></thead><tbody>${rows.map((t) => `<tr><td><a href="${esc(t.permalink || '#')}" target="_blank" rel="noreferrer">${esc(t.name)}</a><div class="mono">${esc(t.gid)}</div></td><td>${esc(t.project_name || '—')}</td><td>${esc(t.assignee_name || '—')}</td><td>${esc(t.created_at || '—')}</td><td>${esc(t.completed_at || '—')}</td><td>${esc(t.due_on || '—')}</td></tr>`).join('') || '<tr><td colspan="6">No contributing task records.</td></tr>'}</tbody></table></div>`);
+      }));
+    } catch (e) { teamTable.innerHTML = `<div class="empty-state">Team KPI table unavailable: ${esc(e.message)}</div>`; }
+  };
+  root.querySelector('#btn-asana-kpi-run').addEventListener('click', loadTeamKpis);
+  await loadTeamKpis();
 
   // AI Assisted Eval Button
   root.querySelector('#btn-asana-perf-eval-run').addEventListener('click', async () => {
@@ -1504,6 +1530,7 @@ async function renderSettingsTab(tab) {
   if (tab === 'layout') { renderLayoutTab(); return; }
   if (tab === 'navigation') { renderNavigationTab(); return; }
   if (tab === 'advanced') { renderAdvancedTab(); return; }
+  if (tab === 'prompt') { renderPromptTab(); return; }
 
   if (tab === 'chat') {
     let cfg = {}, provs = { providers: [] }, disc = { models: [] }, keys = { keys: {} };
@@ -1682,7 +1709,7 @@ async function renderSettingsTab(tab) {
         await refreshStatusbar();
       } catch (e) { toast(e.message, 'err'); }
     });
-    box.querySelector('#btn-test-chat').addEventListener('click', async () => {
+    $('#btn-test-chat').addEventListener('click', async () => {
       try {
         const provider = box.querySelector('#s-provider').value;
         const model = box.querySelector('#s-model').value;
@@ -1692,6 +1719,11 @@ async function renderSettingsTab(tab) {
         toast(res.ok ? 'Chat test passed' : `Chat test failed: ${text.slice(0, 140)}`, res.ok ? 'ok' : 'err');
       } catch (e) { toast(`Test failed: ${e.message}`, 'err'); }
     });
+    return;
+  }
+
+  if (tab === 'prompt') {
+    await renderPromptTab();
     return;
   }
 
@@ -1789,44 +1821,63 @@ async function renderSettingsTab(tab) {
     if (window.desktop && window.desktop.getUpdateInfo) {
       try { updInfo = await window.desktop.getUpdateInfo(); } catch { /* */ }
     }
-    const updVer = (updInfo && updInfo.version) || a.version || '—';
+    const updVer = (updInfo && updInfo.version) || a.version || '1.9.6';
     const canUpdate = !!(updInfo && updInfo.isPackaged);
     box.innerHTML = `
       <div class="settings-pane active">
-        <div class="settings-title"><span class="codicon codicon-info"></span> About Conductor</div>
-        <div class="about-grid">
-          <div class="about-item"><div class="a-label">App</div><div class="a-value">${esc(a.name || 'Conductor')}</div></div>
-          <div class="about-item"><div class="a-label">Version</div><div class="a-value mono">${esc(updVer)}</div></div>
-          <div class="about-item"><div class="a-label">Python</div><div class="a-value mono">${esc(a.python || '—')}</div></div>
-          <div class="about-item"><div class="a-label">Platform</div><div class="a-value">${esc(a.platform || '—')}</div></div>
-          <div class="about-item"><div class="a-label">Data directory</div><div class="a-value mono">${esc(a.data_dir || '—')}</div></div>
-          <div class="about-item"><div class="a-label">Database</div><div class="a-value mono">${a.db_size ? (a.db_size / 1024 / 1024).toFixed(2) + ' MB' : '—'}</div></div>
-          <div class="about-item"><div class="a-label">Uptime</div><div class="a-value mono">${esc(String(a.uptime_s || '—'))}s</div></div>
-        </div>
-        <div class="settings-section" style="margin-top:0.75rem">
-          <div class="settings-title"><span class="codicon codicon-cloud-download"></span> Software update & Version Management</div>
-          <div class="settings-note" id="upd-status">${canUpdate ? 'Updates are checked automatically at launch.' : 'Running dev / current build (v1.9.5).'}</div>
-          
-          <div class="settings-actions" style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
-            <button class="btn-primary" id="btn-check-updates"><span class="codicon codicon-refresh"></span> Check for updates</button>
-            <button class="btn-primary" id="btn-install-update" ${state.updateReady.ready ? '' : 'hidden'}><span class="codicon codicon-cloud-upload"></span> Restart &amp; install</button>
+        <div class="update-banner-card">
+          <div class="ub-left">
+            <div class="ub-icon codicon codicon-cloud-download"></div>
+            <div class="ub-details">
+              <div class="ub-title">Conductor Version Control</div>
+              <div class="ub-status" id="upd-status">${canUpdate ? 'Updates are checked automatically at launch.' : `Running build v${esc(updVer)}.`}</div>
+            </div>
           </div>
+          <div class="ub-actions">
+            <button class="btn-primary" id="btn-check-updates"><span class="codicon codicon-refresh"></span> Check for Updates</button>
+            <button class="btn-primary" id="btn-install-update" ${state.updateReady.ready ? '' : 'hidden'}><span class="codicon codicon-cloud-upload"></span> Restart &amp; Install</button>
+          </div>
+        </div>
 
-          <div style="margin-top:12px; border-top:1px solid var(--t-edges-borderColor, #333); padding-top:10px;">
-            <div style="font-weight:600; margin-bottom:6px; font-size:0.85rem;">Available Versions & Rollback:</div>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <select id="upd-version-select" class="input-select" style="flex:1;">
-                <option value="1.9.5">v1.9.5 (Current / Latest)</option>
+        <div class="settings-section" style="margin-top:1rem;">
+          <div class="settings-title"><span class="codicon codicon-server-environment"></span> Environment Details</div>
+          <div class="about-grid">
+            <div class="about-item"><div class="a-label">App Name</div><div class="a-value">${esc(a.name || 'Conductor')}</div></div>
+            <div class="about-item"><div class="a-label">Active Version</div><div class="a-value mono" style="color:var(--accent,#38bdf8); font-weight:600;">v${esc(updVer)}</div></div>
+            <div class="about-item"><div class="a-label">Python Runtime</div><div class="a-value mono">${esc(a.python || '3.11.15')}</div></div>
+            <div class="about-item"><div class="a-label">Platform OS</div><div class="a-value">${esc(a.platform || 'win32')}</div></div>
+            <div class="about-item"><div class="a-label">Database Size</div><div class="a-value mono">${a.db_size ? (a.db_size / 1024 / 1024).toFixed(2) + ' MB' : '—'}</div></div>
+            <div class="about-item"><div class="a-label">Uptime</div><div class="a-value mono">${esc(String(a.uptime_s || '0'))}s</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" style="margin-top:1rem;">
+          <div class="settings-title"><span class="codicon codicon-history"></span> Version Target &amp; Rollback</div>
+          <div class="settings-note">Switch application build targets or rollback to a previous release version.</div>
+          <div class="version-rollback-box">
+            <label class="field" style="flex:1;">
+              <span>Release Target</span>
+              <select id="upd-version-select" class="input-select" style="width:100%; height:32px; padding:0 8px;">
+                <option value="1.9.6">v1.9.6 (Current / Latest)</option>
+                <option value="1.9.5">v1.9.5</option>
                 <option value="1.7.0">v1.7.0</option>
                 <option value="1.6.0">v1.6.0</option>
                 <option value="1.5.0">v1.5.0</option>
                 <option value="1.4.0">v1.4.0</option>
               </select>
-              <button class="btn-secondary" id="btn-rollback-version"><span class="codicon codicon-history"></span> Rollback / Switch Version</button>
-            </div>
+            </label>
+            <button class="btn-secondary" id="btn-rollback-version" style="height:32px; align-self:flex-end;">
+              <span class="codicon codicon-history"></span> Rollback / Switch Target
+            </button>
           </div>
         </div>
-        <div class="settings-note" style="margin-top:0.75rem">Four pillars: process discovery · automation infrastructure · AI integration · SOPs &amp; governance. Built on the parker desktop skeleton (Electron + FastAPI + SQLite + llama.cpp).</div>
+
+        <div class="about-pillars">
+          <span class="pillar-chip"><span class="codicon codicon-lightbulb"></span> Process Discovery</span>
+          <span class="pillar-chip"><span class="codicon codicon-zap"></span> Automations</span>
+          <span class="pillar-chip"><span class="codicon codicon-sparkle"></span> AI Integration</span>
+          <span class="pillar-chip"><span class="codicon codicon-shield"></span> Governance</span>
+        </div>
       </div>`;
 
     const setStatus = (msg) => { const el = box.querySelector('#upd-status'); if (el) el.textContent = msg; };
@@ -1897,6 +1948,95 @@ async function renderSettingsTab(tab) {
   }
 }
 
+async function renderPromptTab() {
+  const box = $('#settings-content');
+  let cfg = {};
+  try { cfg = await api('/api/chat/config'); } catch { /* */ }
+
+  const defaultPrompt = `You are Conductor Assistant, the user copilot running inside Conductor — a desktop workbench for Luminize (managing 80+ Amazon brands and multi-channel marketplaces).
+
+Your primary role:
+- Guide and assist users in navigating Conductor, managing tasks, inspecting catalog data, running AI workflows, and automating operations.
+- Act as a thoughtful, articulate, user-focused assistant.
+- Before making structural changes to the app, altering catalog schemas, or modifying automation pipelines, consult or delegate to specialist agents like Franky (Catalog Architect & Operations Engineer) or trigger the appropriate specialized agent workflow.
+
+Specialist Agents Available:
+- Franky: Senior Catalog Architect & Automation Specialist (multi-format parsing, Keepa live queries, Asana sync, catalog schemas).
+- Asana Harvester: Asana task, subtask, story, and custom field synchronization.
+- Keepa Analyst: Price history, Buy Box tracking, and sales rank analysis.
+- Flow Canvas & Asana Rules: Node-graph flow builders and trigger-action automations.
+
+Tone: Helpful, clear, proactive, and practical. Keep responses focused and concise unless detailed depth is requested.`;
+
+  const frankyPrompt = `You are Franky, the Catalog Architect & Automation Copilot running inside Conductor — a desktop workbench for Luminize (a top-5 Amazon seller managing 80+ brands). You live alongside live catalog ingestion pipelines, Keepa market intelligence, Asana task mirrors, Flow Canvas automations, and a multi-provider LLM suite.
+
+Your tone: sharp, direct, pragmatic, no fluff. Answer in the same language the user writes in.
+
+What you do best:
+- Catalog & File Ingestion: Guide multi-format catalog imports (.xlsx, .xlsb, .csv, .tsv, .md, .docx, .pdf, .json); extract compliance attributes (batteries, wireless, hazmat, materials) and infer Amazon compliance categories.
+- Keepa Intelligence: Execute live product lookups, brand/seller ASIN searches, price history tracking, sales rank analysis, and natural-language Keepa queries.
+- Asana Operations: Sync tasks, subtasks, stories/comments, attachments, and custom fields across workspace projects.
+- Automation Design: Propose trigger → condition → action chains, Flow Canvas node graphs, and Asana rules.
+- Governance: Draft SOPs/runbooks, define validation guardrails, and track process execution.
+
+In-app moves to suggest: run a Keepa lookup, ingest a catalog file, trigger an Asana sync, build a Flow Canvas automation, or inspect AI workflow runs. When uncertain, suggest a concrete action in the app.
+
+Keep answers under ~200 words unless depth is requested. Use markdown-lite (bold, code, short lists) — no bloated tables.`;
+
+  const opsPrompt = `You are Operations Analyst Copilot inside Conductor. Your focus is optimizing Amazon seller operations, catalog compliance, Asana task throughput, and Keepa price/rank signals.
+
+Before executing schema or app changes, delegate technical engineering tasks to Franky (Catalog Architect).
+
+Tone: Analytical, precise, metric-driven. Always cite relevant product SKUs, ASINs, and task GIDs.`;
+
+  box.innerHTML = `
+    <div class="settings-pane active">
+      <div class="settings-section">
+        <div class="settings-title"><span class="codicon codicon-terminal"></span> AI Copilot System Prompt</div>
+        <div class="settings-note">Customize the system prompt used by the AI Chat copilot. Your assistant can consult specialist agents like Franky before making changes to the app or catalog.</div>
+
+        <div style="margin-top:0.75rem;">
+          <label class="field" style="display:block;">
+            <span>System Prompt Text</span>
+            <textarea id="s-system-prompt" style="width:100%; height:260px; font-family:var(--font-mono); font-size:12px; line-height:1.4; padding:8px; background:var(--t-surface-base, #111); color:var(--fg); border:1px solid var(--border); border-radius:6px; resize:vertical;"></textarea>
+          </label>
+        </div>
+
+        <div style="margin-top:0.75rem;">
+          <div class="settings-note" style="margin-bottom:0.4rem;">Quick Preset Templates:</div>
+          <div class="field-row" style="display:flex; gap:0.5rem;">
+            <button class="btn-secondary btn-sm" id="btn-tmpl-default"><span class="codicon codicon-person"></span> User Assistant (Default)</button>
+            <button class="btn-secondary btn-sm" id="btn-tmpl-franky"><span class="codicon codicon-tools"></span> Franky (Catalog Architect)</button>
+            <button class="btn-secondary btn-sm" id="btn-tmpl-ops"><span class="codicon codicon-graph"></span> Operations Analyst</button>
+          </div>
+        </div>
+
+        <div class="settings-actions" style="margin-top:1rem;">
+          <button class="btn-primary" id="btn-save-prompt"><span class="codicon codicon-save"></span> Save System Prompt</button>
+          <button class="btn-secondary" id="btn-reset-prompt">Reset Default</button>
+        </div>
+      </div>
+    </div>`;
+
+  const textarea = $('#s-system-prompt');
+  textarea.value = cfg.system_prompt || defaultPrompt;
+
+  $('#btn-tmpl-default').addEventListener('click', () => { textarea.value = defaultPrompt; });
+  $('#btn-tmpl-franky').addEventListener('click', () => { textarea.value = frankyPrompt; });
+  $('#btn-tmpl-ops').addEventListener('click', () => { textarea.value = opsPrompt; });
+  $('#btn-reset-prompt').addEventListener('click', () => { textarea.value = defaultPrompt; });
+
+  $('#btn-save-prompt').addEventListener('click', async () => {
+    try {
+      const text = textarea.value.trim();
+      const res = await api('/api/chat/config', { method: 'POST', body: { system_prompt: text } });
+      toast('System Prompt updated & saved ✓', 'ok');
+    } catch (e) {
+      toast('Failed to save System Prompt: ' + e.message, 'err');
+    }
+  });
+}
+
 function openSettings() {
   $('#settings-backdrop').hidden = false;
   applyLayout(getLayout());
@@ -1930,7 +2070,7 @@ async function refreshStatusbar() {
     $('#status-tokens').textContent = `${fmtNum((tu.total_tokens || 0) + (tu.input_tokens || 0) + (tu.output_tokens || 0))} tok`;
     const as = (st.connections && st.connections.asana) || {};
     $('#status-conn').textContent = `asana ${fmtNum(as.tasks || 0)} · ${st.automations !== undefined ? fmtNum(state.stats.automations ? (state.stats.automations.total || 0) : 0) : ''} automations · db ${(st.db_size || 0) / 1024 / 1024 >= 1 ? (st.db_size / 1024 / 1024).toFixed(1) + 'MB' : fmtNum(st.db_size) + 'B'}`;
-    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.9.5'}`;
+    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.9.6'}`;
   } catch { /* statusbar is best-effort */ }
 }
 
@@ -1977,15 +2117,27 @@ async function initAiComposer() {
   try {
     const saved = JSON.parse(localStorage.getItem('conductor.chat') || '{}');
     const [provs, cfg] = await Promise.all([api('/api/chat/providers'), api('/api/chat/config')]);
-    const configured = (provs.providers || []).filter((p) => p.configured);
-    if (!configured.length) return; // no keyed providers — keep the bar hidden
-    provSel.innerHTML = configured
-      .map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')
-      + '<option value="llama">Local Llama</option>';
+    const allProviders = provs.providers || [];
+    if (!allProviders.length) return;
+    const configured = allProviders.filter((p) => p.configured);
+    const unconfigured = allProviders.filter((p) => !p.configured);
+    let html = '';
+    if (configured.length) {
+      html += '<optgroup label="Configured">' +
+        configured.map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('') +
+        '</optgroup>';
+    }
+    if (unconfigured.length) {
+      html += '<optgroup label="Presets (Needs Key)">' +
+        unconfigured.map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('') +
+        '</optgroup>';
+    }
+    html += '<optgroup label="Local Engine"><option value="llama">Local Llama</option></optgroup>';
+    provSel.innerHTML = html;
     modelSel.innerHTML = '';
     const refreshModels = () => {
       const pid = provSel.value;
-      const p = (provs.providers || []).find((x) => x.id === pid);
+      const p = allProviders.find((x) => x.id === pid);
       modelSel.innerHTML = (p && p.models && p.models.length
         ? p.models.map((m) => `<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('')
         : `<option value="">${esc((p && p.defaultModelId) || (cfg.model || ''))}</option>`);
@@ -5733,6 +5885,73 @@ async function runSvl() {
         </tr>`).join('') || '<tr><td colspan="6" class="empty-state">No matches above threshold.</td></tr>'}</tbody></table>`;
   } catch (e) { res.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`; }
 }
+
+/* ==========================================================================
+   LISTINGS WORKSPACE — live index, Suggested vs Live, glossary
+   ========================================================================== */
+const listingsState = { tab: 'live', sourceId: '', report: null };
+
+async function renderListings(tab = listingsState.tab) {
+  listingsState.tab = tab;
+  const root = $('#view-root');
+  root.innerHTML = `<div class="view"><div class="view-header"><div>
+    <div class="view-title">Listings</div><div class="view-sub">Live listing content, suggested-content review, and shared catalog definitions.</div>
+  </div></div>
+  <div class="dm-tabs" role="tablist">
+    <button class="dm-tab ${tab === 'live' ? 'active' : ''}" data-listing-tab="live" role="tab" aria-selected="${tab === 'live'}">Live Listings</button>
+    <button class="dm-tab ${tab === 'suggested' ? 'active' : ''}" data-listing-tab="suggested" role="tab" aria-selected="${tab === 'suggested'}">Suggested vs Live</button>
+    <button class="dm-tab ${tab === 'glossary' ? 'active' : ''}" data-listing-tab="glossary" role="tab" aria-selected="${tab === 'glossary'}">Glossary &amp; Registry</button>
+  </div><div id="listings-workspace" style="margin-top:0.8rem"></div></div>`;
+  root.querySelectorAll('[data-listing-tab]').forEach((button) => button.addEventListener('click', () => renderListings(button.dataset.listingTab)));
+  if (tab === 'live') return renderLiveListings();
+  if (tab === 'glossary') return renderListingGlossary();
+  return renderSuggestedVsLive();
+}
+
+async function renderLiveListings() {
+  const box = $('#listings-workspace'); box.innerHTML = '<div class="folder-loading">Loading local listing index…</div>';
+  try {
+    const products = await window.ConductorData.get('products');
+    if (!products.length) { box.innerHTML = '<div class="empty-state">No listings are in the local catalog yet. Import a catalog source first.</div>'; return; }
+    box.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>SKU</th><th>Listing title</th><th>Category</th><th>Market</th><th>Source</th><th>Added</th></tr></thead><tbody>${products.map((p) => `<tr class="row-click" data-product-id="${p.id}"><td class="mono">${esc(p.sku)}</td><td><b>${esc(p.name)}</b></td><td>${esc(p.category || '—')}</td><td>${esc(p.market || '—')}</td><td>${esc(p.source || '—')}</td><td>${esc(timeAgo(p.created_at))}</td></tr>`).join('')}</tbody></table></div>`;
+    box.querySelectorAll('[data-product-id]').forEach((row) => row.addEventListener('click', () => renderProductDetail(Number(row.dataset.productId))));
+  } catch (e) { box.innerHTML = `<div class="empty-state">Could not load listings: ${esc(e.message)}</div>`; }
+}
+
+async function renderSuggestedVsLive() {
+  const box = $('#listings-workspace');
+  box.innerHTML = `<div class="svl-form"><div class="settings-note">Diagnostic only — this comparison never publishes or modifies a live listing. Sources must be fresh within 48 hours for strict results.</div>
+    <label class="field"><span>Suggested content file</span><input id="listing-suggested-file" type="file" accept=".xlsx,.xlsm,.csv,.tsv,.tab,.json,.ndjson,.jsonl" /></label>
+    <div class="settings-actions"><button class="btn-primary" id="listing-upload"><span class="codicon codicon-cloud-upload"></span> Upload suggested content</button><button class="btn-secondary" id="listing-refresh"><span class="codicon codicon-refresh"></span> Refresh stale live data</button><button class="btn-primary" id="listing-compare"><span class="codicon codicon-arrow-swap"></span> Compare fresh records</button></div>
+  </div><div id="listing-compare-results"></div>`;
+  const results = $('#listing-compare-results');
+  $('#listing-upload').addEventListener('click', async () => {
+    const file = $('#listing-suggested-file').files[0]; if (!file) return toast('Choose a suggested content file first', 'warn');
+    const data = new FormData(); data.append('file', file); results.innerHTML = '<div class="empty-state">Importing suggested content…</div>';
+    try { const r = await fetch('/api/listings/suggested/upload', { method: 'POST', body: data }); if (!r.ok) throw new Error(await r.text()); const out = await r.json(); listingsState.sourceId = out.source_id; results.innerHTML = `<div class="settings-note">Imported <b>${fmtNum(out.records_accepted)}</b> suggested listing records from ${esc(file.name)}. Refresh live data before comparison.</div>`; } catch (e) { results.innerHTML = `<div class="empty-state">Upload failed: ${esc(e.message)}</div>`; }
+  });
+  $('#listing-refresh').addEventListener('click', async () => {
+    if (!listingsState.sourceId) return toast('Upload suggested content first', 'warn'); results.innerHTML = '<div class="empty-state">Refreshing stale listing snapshots…</div>';
+    try { const out = await api('/api/listings/refresh', { method: 'POST', body: { source_id: listingsState.sourceId } }); results.innerHTML = `<div class="settings-note">${esc(out.status)} — ${fmtNum(out.refreshed || 0)} refreshed / ${fmtNum(out.stale || 0)} stale targets. ${out.status !== 'success' ? 'Configure Keepa or another live adapter to refresh stale records.' : ''}</div>`; } catch (e) { results.innerHTML = `<div class="empty-state">Refresh blocked: ${esc(e.message)}</div>`; }
+  });
+  $('#listing-compare').addEventListener('click', async () => {
+    if (!listingsState.sourceId) return toast('Upload suggested content first', 'warn'); results.innerHTML = '<div class="empty-state">Comparing suggested and fresh live content…</div>';
+    try { const out = await api('/api/listings/compare', { method: 'POST', body: { source_id: listingsState.sourceId, strict_fresh: true } }); listingsState.report = out;
+      results.innerHTML = `${out.stale_records ? `<div class="settings-note">${fmtNum(out.stale_records)} record(s) were excluded because live data is stale.</div>` : ''}<div class="data-table-wrap"><table class="data-table"><thead><tr><th>ASIN / SKU</th><th>Field</th><th>Suggested</th><th>Live</th><th>Similarity</th><th>Status</th><th>Recommendation</th></tr></thead><tbody>${out.rows.map((r) => `<tr><td class="mono">${esc(r.asin || r.sku)}</td><td class="mono">${esc(r.field)}</td><td>${esc(String(r.suggested).slice(0, 160))}</td><td>${esc(String(r.live).slice(0, 160))}</td><td>${(Math.max(r.levenshtein_similarity || 0, r.fuzzy_similarity || 0) * 100).toFixed(1)}%</td><td><span class="${r.match_status === 'match' ? 'pill-int pill-int-configured' : r.match_status === 'near_match' ? 'pill-int' : 'pill-int pill-int-missing'}">${esc(r.match_status)}</span></td><td>${esc(r.recommendation || '—')}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-state">No fresh comparison rows. Refresh live data or use a configured adapter.</td></tr>'}</tbody></table></div>`;
+    } catch (e) { results.innerHTML = `<div class="empty-state">Compare failed: ${esc(e.message)}</div>`; }
+  });
+}
+
+async function renderListingGlossary() {
+  const box = $('#listings-workspace'); box.innerHTML = '<div class="folder-loading">Loading the local registry…</div>';
+  try {
+    const [glossary, spine] = await Promise.all([api('/api/spine/glossary'), api('/api/spine/snapshot')]);
+    const items = glossary.items || [];
+    box.innerHTML = `<div class="settings-note">Canonical local-first registry: features, file types, statuses, lifecycle states, models, workflow nodes, datasets, and shared filters.</div><div class="data-table-wrap" style="margin-top:0.65rem"><table class="data-table"><thead><tr><th>Term</th><th>Type</th><th>Definition</th><th>Route</th><th>Status</th></tr></thead><tbody>${items.map((i) => `<tr><td class="mono">${esc(i.label)}</td><td>${esc(i.kind)}</td><td>${esc(i.description)}</td><td class="mono">${esc(i.route || '—')}</td><td><span class="pill-int pill-int-configured">${esc(i.status_key)}</span></td></tr>`).join('')}</tbody></table></div>`;
+  } catch (e) { box.innerHTML = `<div class="empty-state">Registry unavailable: ${esc(e.message)}</div>`; }
+}
+
+async function renderSvl() { return renderListings('suggested'); }
 
 /* ==========================================================================
    BRAND & CATEGORY COMPARISON — "brand X vs top competitors" across the

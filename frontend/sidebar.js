@@ -15,12 +15,15 @@
    `view` is the showView() renderer key. `count` is the data-count badge key.
    Custom (user-added) items live in the config under `custom`, not here. */
 const NAV_ITEMS = {
-  // Primary (Top Launchable Items)
+  // Core Entry Point Items
   chat:            { label: 'Chat',               icon: 'codicon-comment-discussion', view: 'chat' },
   dashboard:       { label: 'Dashboard',          icon: 'codicon-dashboard',          view: 'dashboard' },
-  keepa:           { label: 'Keepa',              icon: 'codicon-graph-line',         view: 'keepa' },
   asana:           { label: 'Asana',              icon: 'codicon-organization',       view: 'asana',    count: 'asana' },
+  keepa:           { label: 'Keepa',              icon: 'codicon-graph-line',         view: 'keepa' },
   compliance:      { label: 'Compliance',         icon: 'codicon-shield',             view: 'checks',   count: 'checks' },
+  products:        { label: 'Products',           icon: 'codicon-package',            view: 'products', count: 'products' },
+  workflows:       { label: 'Workflows',          icon: 'codicon-git-merge',          view: 'workflows' },
+  settings:        { label: 'Settings',           icon: 'codicon-settings-gear',      view: 'settings' },
   models:          { label: 'Models',             icon: 'codicon-hubot',              view: 'models' },
 
   // Analytics & Data
@@ -84,9 +87,100 @@ const NAV_ITEMS = {
 
 /* ------------------------------------------------------------- presets */
 const SIDEBAR_PRESETS = {
+  minimal: {
+    label: 'Essential Entry Point (Minimal)',
+    desc: 'Clean, focused launchpad with chat, dashboard, asana, keepa, compliance, products, workflows, and settings.',
+    sections: [
+      { label: 'Primary', items: ['chat', 'dashboard', 'asana', 'keepa', 'compliance', 'products', 'workflows', 'settings'] },
+    ],
+  },
+  executive: {
+    label: 'Executive & Strategic Overview',
+    desc: 'High-level metrics, reports, compliance, brand health, and AI copilot.',
+    sections: [
+      { label: 'Executive', items: ['dashboard', 'insights', 'reports', 'kpi', 'compliance', 'brands', 'chat', 'settings'] },
+    ],
+  },
+  catalog_ops: {
+    label: 'Catalog & Listing Operations',
+    desc: 'Catalog management, listings, variations, file ingest, attribute audits, and flat files.',
+    sections: [
+      { label: 'Catalog', items: ['products', 'listings', 'variations', 'ingest', 'attraudit', 'flatfile', 'brandcompare', 'chat', 'settings'] },
+    ],
+  },
+  amazon_fba: {
+    label: 'Amazon & FBA Specialist',
+    desc: 'Amazon Seller Central, SP-API pipelines, FBA logistics, Keepa tracking, and compliance.',
+    sections: [
+      { label: 'Amazon FBA', items: ['amazon', 'spapi', 'fba', 'keepa', 'compliance', 'products', 'chat', 'settings'] },
+    ],
+  },
+  multi_channel: {
+    label: 'Multi-Channel Marketplaces',
+    desc: 'Cross-platform seller tools for Amazon, Walmart, TikTok, Target, SPP, and Coastal.',
+    sections: [
+      { label: 'Channels', items: ['amazon', 'walmart', 'tiktok', 'target', 'spp', 'coastal', 'agency', 'chat', 'settings'] },
+    ],
+  },
+  ai_engineer: {
+    label: 'AI & Flow Engineering',
+    desc: 'Flow Canvas, local Llama models, autonomous agents, and AI workflow builders.',
+    sections: [
+      { label: 'AI Suite', items: ['chat', 'models', 'bernie', 'asanarules', 'agents', 'aiworkflows', 'agentbuilder', 'settings'] },
+    ],
+  },
+  process_automation: {
+    label: 'Process Discovery & Automation',
+    desc: 'Business process discovery, triggers & actions, Asana rules, and workflow engines.',
+    sections: [
+      { label: 'Automation', items: ['processes', 'workflows', 'automations', 'workflowbuilder', 'asanarules', 'asana', 'settings'] },
+    ],
+  },
+  data_analytics: {
+    label: 'Data Science & Analytics',
+    desc: 'DataWrangler, KPI Studio, bulk imports, local sources, and SvL comparison.',
+    sections: [
+      { label: 'Analytics', items: ['data', 'datawrangler', 'kpi', 'import', 'sources', 'svl', 'reports', 'settings'] },
+    ],
+  },
+  compliance_gov: {
+    label: 'Regulatory & Compliance',
+    desc: 'Product compliance checks, regulations, policy store, guidelines, and SOPs.',
+    sections: [
+      { label: 'Compliance', items: ['compliance', 'regs', 'guidelines', 'policies', 'sops', 'runbooks', 'attraudit', 'settings'] },
+    ],
+  },
+  brand_onboarding: {
+    label: 'Brand Onboarding & Management',
+    desc: 'Brand portfolio operations, guidelines, catalog ingest, and team contacts.',
+    sections: [
+      { label: 'Brand Ops', items: ['brands', 'products', 'brandcompare', 'ingest', 'guidelines', 'people', 'chat', 'settings'] },
+    ],
+  },
+  team_task: {
+    label: 'Task & Operations Manager',
+    desc: 'Asana task synchronization, action queue, staff allocation, and case issues.',
+    sections: [
+      { label: 'Tasks & Team', items: ['tasks', 'asana', 'people', 'case', 'sops', 'customerservice', 'dashboard', 'settings'] },
+    ],
+  },
+  dev_mcp: {
+    label: 'Developer & Systems Integration',
+    desc: 'MCP Sync Center, integrations, webhooks, REST API testing, and system events.',
+    sections: [
+      { label: 'Developer', items: ['mcpsync', 'integrations', 'requests', 'events', 'developer', 'models', 'settings'] },
+    ],
+  },
+  customer_support: {
+    label: 'Customer Service & Desk',
+    desc: 'Customer tickets, case issues, product lookup, SOPs, and policy references.',
+    sections: [
+      { label: 'Support', items: ['customerservice', 'case', 'products', 'sops', 'policies', 'tasks', 'chat', 'settings'] },
+    ],
+  },
   dayone: {
     label: 'Day One Hub',
-    desc: 'Streamlined launchpad with Primary essentials, Analytics & Data, Marketplace Platforms, Automation & AI, and Operations.',
+    desc: 'Balanced cross-functional launchpad with primary essentials, analytics, marketplace, and operations.',
     sections: [
       { label: 'Primary',               items: ['chat', 'dashboard', 'keepa', 'asana', 'compliance', 'models'] },
       { label: 'Analytics & Data',      items: ['data', 'datawrangler', 'kpi', 'insights', 'reports', 'import', 'sources'] },
@@ -96,8 +190,8 @@ const SIDEBAR_PRESETS = {
     ],
   },
   commerce: {
-    label: 'Commerce Hub',
-    desc: 'Complete overview organized into Primary, Analytics & Data, Marketplace Platforms, Automation & AI, and Operations.',
+    label: 'Commerce Hub (All Views)',
+    desc: 'Complete overview with all 50+ views available in the app.',
     sections: [
       { label: 'Primary',               items: ['chat', 'dashboard', 'keepa', 'asana', 'compliance', 'models'] },
       { label: 'Analytics & Data',      items: ['data', 'datawrangler', 'kpi', 'insights', 'reports', 'import', 'sources', 'attraudit', 'svl', 'brandcompare', 'flatfile'] },
@@ -106,75 +200,27 @@ const SIDEBAR_PRESETS = {
       { label: 'Operations',           items: ['products', 'brands', 'people', 'sops', 'tasks', 'listings', 'variations', 'ingest', 'regs', 'guidelines', 'runbooks', 'policies', 'integrations', 'mcpsync', 'events', 'requests', 'developer', 'content', 'case', 'customerservice'] },
     ],
   },
-  core: {
-    label: 'Core (Business)',
-    desc: 'Business-unit lens featuring Primary, Marketplace Platforms, and Operations.',
-    sections: [
-      { label: 'Primary',               items: ['chat', 'dashboard', 'models', 'keepa', 'asana'] },
-      { label: 'Marketplace Platforms', items: ['amazon', 'spapi', 'walmart', 'tiktok', 'target', 'fba'] },
-      { label: 'Operations',           items: ['products', 'brands', 'people', 'sops', 'compliance', 'tasks', 'mcpsync'] },
-    ],
-  },
-  functional: {
-    label: 'Functional',
-    desc: 'Function-oriented lens — Analytics & Data, Automation & AI, Operations.',
-    sections: [
-      { label: 'Analytics & Data', items: ['data', 'datawrangler', 'kpi', 'insights', 'reports', 'import', 'sources', 'flatfile', 'svl', 'keepa'] },
-      { label: 'Automation & AI', items: ['workflows', 'automations', 'workflowbuilder', 'processes', 'bernie', 'asanarules', 'agents', 'aiworkflows', 'agentbuilder', 'features'] },
-      { label: 'Operations',      items: ['products', 'brands', 'people', 'sops', 'compliance', 'tasks', 'integrations', 'mcpsync', 'runbooks', 'policies'] },
-    ],
-  },
-  classic: {
-    label: 'BPA Classic',
-    desc: 'The original Conductor nav layout (Primary, Operations, Automation & AI, Platform).',
-    sections: [
-      { label: 'Primary',         items: ['chat', 'dashboard', 'models', 'insights'] },
-      { label: 'Operations',      items: ['compliance', 'products', 'ingest', 'tasks', 'regs', 'variations', 'sops'] },
-      { label: 'Automation & AI', items: ['processes', 'automations', 'aiworkflows', 'agents', 'bernie', 'asanarules'] },
-      { label: 'Platform',        items: ['integrations', 'mcpsync', 'asana', 'events', 'requests', 'developer'] },
-    ],
-  },
 };
 const SIDEBAR_PRESET_IDS = Object.keys(SIDEBAR_PRESETS);
 
 /* --------------------------------------------------------------- config */
 const SIDEBAR_KEY = 'conductor.sidebar.config';
-const DEFAULT_PRESET = 'dayone';
+const DEFAULT_PRESET = 'minimal';
 
 function sidebarDefaultConfig() {
-  return { preset: DEFAULT_PRESET, sections: JSON.parse(JSON.stringify(SIDEBAR_PRESETS[DEFAULT_PRESET].sections)), custom: {} };
+  return { v: 3, preset: DEFAULT_PRESET, sections: JSON.parse(JSON.stringify(SIDEBAR_PRESETS[DEFAULT_PRESET].sections)), custom: {} };
 }
 
 function loadSidebarConfig() {
   try {
     const c = JSON.parse(localStorage.getItem(SIDEBAR_KEY) || 'null');
-    if (c && Array.isArray(c.sections)) {
-      const hasSync = c.sections.some((sec) => Array.isArray(sec.items) && sec.items.includes('mcpsync'));
-      if (!hasSync && c.sections[0] && Array.isArray(c.sections[0].items)) {
-        c.sections[0].items.push('mcpsync');
-        localStorage.setItem(SIDEBAR_KEY, JSON.stringify(c));
-      }
-      // Migration: make sure the Asana Rules Canvas follows Flow Canvas.
-      const hasRules = c.sections.some((sec) => Array.isArray(sec.items) && sec.items.includes('asanarules'));
-      if (!hasRules) {
-        let placed = false;
-        for (const anchor of ['bernie', 'automations', 'processes', 'workflowbuilder']) {
-          for (const sec of c.sections) {
-            if (!Array.isArray(sec.items)) continue;
-            const ai = sec.items.indexOf(anchor);
-            if (ai >= 0) { sec.items.splice(ai + 1, 0, 'asanarules'); localStorage.setItem(SIDEBAR_KEY, JSON.stringify(c)); placed = true; break; }
-          }
-          if (placed) break;
-        }
-        if (!placed && c.sections[0] && Array.isArray(c.sections[0].items)) {
-          c.sections[0].items.push('asanarules');
-          localStorage.setItem(SIDEBAR_KEY, JSON.stringify(c));
-        }
-      }
+    if (c && c.v === 3 && Array.isArray(c.sections)) {
       return c;
     }
   } catch { /* fall through */ }
-  return sidebarDefaultConfig();
+  const def = sidebarDefaultConfig();
+  saveSidebarConfig(def);
+  return def;
 }
 
 function saveSidebarConfig(cfg) {

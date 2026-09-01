@@ -273,6 +273,81 @@ def init_db() -> None:
             value TEXT NOT NULL,               -- json-encoded (or plain string)
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS asana_task_memberships (
+            task_gid TEXT NOT NULL,
+            project_gid TEXT NOT NULL,
+            project_name TEXT DEFAULT '',
+            section_gid TEXT DEFAULT '',
+            section_name TEXT DEFAULT '',
+            team_gid TEXT DEFAULT '',
+            team_name TEXT DEFAULT '',
+            synced_at TEXT NOT NULL,
+            PRIMARY KEY(task_gid, project_gid)
+        );
+        CREATE INDEX IF NOT EXISTS idx_asana_memberships_team ON asana_task_memberships(team_gid);
+        CREATE INDEX IF NOT EXISTS idx_asana_memberships_project ON asana_task_memberships(project_gid);
+        CREATE TABLE IF NOT EXISTS asana_task_custom_field_values (
+            task_gid TEXT NOT NULL,
+            custom_field_gid TEXT NOT NULL,
+            field_name TEXT DEFAULT '',
+            field_type TEXT DEFAULT '',
+            value_text TEXT DEFAULT '',
+            value_number REAL,
+            value_date TEXT DEFAULT '',
+            synced_at TEXT NOT NULL,
+            PRIMARY KEY(task_gid, custom_field_gid)
+        );
+        CREATE INDEX IF NOT EXISTS idx_asana_cf_values_lookup ON asana_task_custom_field_values(custom_field_gid, value_text);
+        CREATE TABLE IF NOT EXISTS asana_kpi_definitions (
+            kpi_id TEXT PRIMARY KEY,
+            team TEXT NOT NULL,
+            label TEXT NOT NULL,
+            unit TEXT NOT NULL,
+            target_value REAL,
+            target_direction TEXT NOT NULL DEFAULT 'higher_is_better',
+            numerator_definition TEXT DEFAULT '',
+            denominator_definition TEXT DEFAULT '',
+            filters TEXT NOT NULL DEFAULT '[]',
+            rollup_policy TEXT NOT NULL DEFAULT 'sum',
+            workbook_source TEXT DEFAULT '',
+            definition_status TEXT NOT NULL DEFAULT 'active',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS asana_kpi_facts (
+            team TEXT NOT NULL,
+            kpi_id TEXT NOT NULL,
+            period_grain TEXT NOT NULL,
+            period_start TEXT NOT NULL,
+            period_end TEXT NOT NULL,
+            snapshot_at TEXT NOT NULL DEFAULT '',
+            numerator REAL,
+            denominator REAL,
+            value REAL,
+            unit TEXT NOT NULL,
+            target_value REAL,
+            source_system TEXT NOT NULL,
+            source_locator TEXT DEFAULT '',
+            calculation_version TEXT NOT NULL DEFAULT 'v1',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(team, kpi_id, period_grain, period_start, snapshot_at)
+        );
+        CREATE INDEX IF NOT EXISTS idx_asana_kpi_facts_period ON asana_kpi_facts(team, period_grain, period_start);
+        CREATE TABLE IF NOT EXISTS asana_kpi_drilldown_records (
+            team TEXT NOT NULL,
+            kpi_id TEXT NOT NULL,
+            period_grain TEXT NOT NULL,
+            period_start TEXT NOT NULL,
+            record_role TEXT NOT NULL,
+            record_type TEXT NOT NULL,
+            record_id TEXT NOT NULL,
+            record_name TEXT DEFAULT '',
+            payload TEXT NOT NULL DEFAULT '{}',
+            source_locator TEXT DEFAULT '',
+            PRIMARY KEY(team, kpi_id, period_grain, period_start, record_role, record_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_asana_kpi_drilldown_scope ON asana_kpi_drilldown_records(team, kpi_id, period_grain, period_start);
         """
     )
     conn.commit()
@@ -893,37 +968,214 @@ def asana_counts() -> dict:
     }
 
 
-def asana_summary() -> dict:
-    """KPI-flavoured rollups (mirrors the discovered Presets.gs KPIs)."""
+def replace_asana_task_memberships(task_gid: str, memberships: list[dict]) -> None:
+    """Replace membership facts for one task; KPI pivots use these instead of a lossy primary project."""
     conn = _conn()
-    out: dict = {"by_project": [], "by_assignee": [], "by_status": {"open": 0, "completed": 0},
-                 "sla_missed": 0, "keepa_weight": 0.0}
+    conn.execute("DELETE FROM asana_task_memberships WHERE task_gid=?", (task_gid,))
+    for m in memberships:
+        project = m.get("project") or {}
+        section = m.get("section") or {}
+        gid = str(project.get("gid") or "")
+        if not gid:
+            continue
+        conn.execute(
+            "INSERT INTO asana_task_memberships VALUES (?,?,?,?,?,?,?,?)",
+            (task_gid, gid, project.get("name") or "", section.get("gid") or "", section.get("name") or "", m.get("team_gid") or "", m.get("team_name") or "", now_iso()),
+        )
+    conn.commit()
+
+
+def replace_asana_task_custom_fields(task_gid: str, values: list[dict]) -> None:
+    conn = _conn()
+    conn.execute("DELETE FROM asana_task_custom_field_values WHERE task_gid=?", (task_gid,))
+    for value in values:
+        gid = str(value.get("gid") or "")
+        if not gid:
+            continue
+        raw = value.get("raw") or {}
+        number = raw.get("number_value")
+        try:
+            number = float(number) if number is not None else None
+        except (TypeError, ValueError):
+            number = None
+        date_value = (raw.get("date_value") or {}).get("date") or ""
+        conn.execute(
+            "INSERT INTO asana_task_custom_field_values VALUES (?,?,?,?,?,?,?,?)",
+            (task_gid, gid, value.get("name") or "", value.get("type") or "", value.get("value") or "", number, date_value, now_iso()),
+        )
+    conn.commit()
+
+
+def asana_kpi_definition_rows() -> list[dict]:
+    return [_decode_row(r) for r in _conn().execute("SELECT * FROM asana_kpi_definitions ORDER BY team, label").fetchall()]
+
+
+def asana_kpi_fact_rows(team: str | None = None, grain: str | None = None) -> list[dict]:
+    sql, params = "SELECT * FROM asana_kpi_facts WHERE 1=1", []
+    if team:
+        sql += " AND team=?"; params.append(team)
+    if grain:
+        sql += " AND period_grain=?"; params.append(grain)
+    sql += " ORDER BY period_start DESC, team, kpi_id"
+    return [_decode_row(r) for r in _conn().execute(sql, params).fetchall()]
+
+
+def asana_summary() -> dict:
+    """Rich KPI rollups matching Luminize kpiReport.gs & Presets.gs definitions:
+    Completions, SLA Adherence Rate, Cycle Time Velocity, Weighted Velocity, Overdue, Custom Fields."""
+    conn = _conn()
+    out = {
+        "metrics": {
+            "total_tasks": 0,
+            "completed_tasks": 0,
+            "open_tasks": 0,
+            "overdue_tasks": 0,
+            "completion_rate_pct": 0.0,
+            "sla_adherence_pct": 0.0,
+            "avg_cycle_time_days": 0.0,
+            "weighted_velocity": 0.0,
+            "sla_missed_count": 0,
+        },
+        "by_assignee": [],
+        "by_project": [],
+        "by_month": [],
+        "by_priority": [],
+        "by_status": {"open": 0, "completed": 0},
+    }
     try:
-        out["by_status"]["open"] = conn.execute(
-            "SELECT COUNT(*) n FROM asana_tasks WHERE completed=0").fetchone()["n"]
-        out["by_status"]["completed"] = conn.execute(
-            "SELECT COUNT(*) n FROM asana_tasks WHERE completed=1").fetchone()["n"]
-        for row in conn.execute(
-            "SELECT project_name, COUNT(*) n FROM asana_tasks GROUP BY project_name "
-            "ORDER BY n DESC LIMIT 20"
-        ):
-            out["by_project"].append({"project": row["project_name"], "count": row["n"]})
-        for row in conn.execute(
-            "SELECT assignee_name, COUNT(*) n FROM asana_tasks WHERE completed=0 "
-            "GROUP BY assignee_name ORDER BY n DESC LIMIT 20"
-        ):
-            out["by_assignee"].append({"assignee": row["assignee_name"], "count": row["n"]})
-        # SLA missed = tasks whose custom field 'initial sla missed' == 'yes'
-        for row in conn.execute(
-            "SELECT custom_fields FROM asana_tasks WHERE completed=0"
-        ):
-            for cf in _decode_row(row).get("custom_fields", []):
-                if str(cf.get("name", "")).strip().lower() == "initial sla missed" \
-                        and str(cf.get("value", "")).strip().lower() == "yes":
-                    out["sla_missed"] += 1
-        out["keepa_weight"] = round(
-            conn.execute("SELECT COALESCE(SUM(weight),0) w FROM asana_tasks WHERE completed=0")
-            .fetchone()["w"], 2)
+        rows = conn.execute("SELECT * FROM asana_tasks").fetchall()
+        if not rows:
+            return out
+
+        now_dt = datetime.now(timezone.utc)
+        total = len(rows)
+        completed = 0
+        open_t = 0
+        overdue = 0
+        sla_on_time = 0
+        sla_eligible = 0
+        cycle_times = []
+        weighted_vel = 0.0
+        sla_missed = 0
+
+        assignee_map = {}
+        project_map = {}
+        month_map = {}
+        priority_map = {}
+
+        for r in rows:
+            t = _decode_row(dict(r))
+            is_done = bool(t.get("completed"))
+            if is_done:
+                completed += 1
+            else:
+                open_t += 1
+
+            # Weight rule: Keepa tasks 0.3, others 1.0
+            name = str(t.get("name") or "")
+            weight = 0.3 if re.search(r"keepa", name, re.I) else 1.0
+            if is_done:
+                weighted_vel += weight
+
+            due_str = str(t.get("due_on") or "").strip()
+            due_dt = None
+            if due_str:
+                try:
+                    due_dt = datetime.fromisoformat(due_str.replace("Z", "+00:00"))
+                    if not due_dt.tzinfo:
+                        due_dt = due_dt.replace(tzinfo=timezone.utc)
+                except Exception:
+                    pass
+
+            if not is_done and due_dt and due_dt < now_dt:
+                overdue += 1
+
+            created_str = str(t.get("created_at") or "").strip()
+            completed_str = str(t.get("completed_at") or "").strip()
+
+            if is_done and completed_str:
+                try:
+                    comp_dt = datetime.fromisoformat(completed_str.replace("Z", "+00:00"))
+                    if not comp_dt.tzinfo:
+                        comp_dt = comp_dt.replace(tzinfo=timezone.utc)
+
+                    if due_dt:
+                        sla_eligible += 1
+                        if comp_dt <= due_dt:
+                            sla_on_time += 1
+
+                    if created_str:
+                        creat_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                        if not creat_dt.tzinfo:
+                            creat_dt = creat_dt.replace(tzinfo=timezone.utc)
+                        days = (comp_dt - creat_dt).total_seconds() / 86400.0
+                        if days >= 0:
+                            cycle_times.append(days)
+
+                    m_key = comp_dt.strftime("%Y-%m")
+                    month_map[m_key] = month_map.get(m_key, 0) + 1
+                except Exception:
+                    pass
+
+            assignee = str(t.get("assignee_name") or "Unassigned").strip()
+            if assignee:
+                if assignee not in assignee_map:
+                    assignee_map[assignee] = {"total": 0, "completed": 0, "open": 0}
+                assignee_map[assignee]["total"] += 1
+                if is_done:
+                    assignee_map[assignee]["completed"] += 1
+                else:
+                    assignee_map[assignee]["open"] += 1
+
+            proj = str(t.get("project_name") or "No Project").strip()
+            if proj:
+                project_map[proj] = project_map.get(proj, 0) + 1
+
+            cfs = t.get("custom_fields") or []
+            if isinstance(cfs, list):
+                for cf in cfs:
+                    if not isinstance(cf, dict):
+                        continue
+                    cf_name = str(cf.get("name") or "").strip().lower()
+                    cf_val = str(cf.get("display_value") or (cf.get("enum_value") or {}).get("name") or cf.get("text_value") or "").strip()
+                    if not cf_val:
+                        continue
+                    if cf_name == "priority":
+                        priority_map[cf_val] = priority_map.get(cf_val, 0) + 1
+                    if "sla" in cf_name and ("missed" in cf_name or "status" in cf_name):
+                        if cf_val.lower() in ("yes", "missed", "failed", "true"):
+                            sla_missed += 1
+
+        out["metrics"]["total_tasks"] = total
+        out["metrics"]["completed_tasks"] = completed
+        out["metrics"]["open_tasks"] = open_t
+        out["metrics"]["overdue_tasks"] = overdue
+        out["metrics"]["completion_rate_pct"] = round((completed / total) * 100.0, 1) if total else 0.0
+        out["metrics"]["sla_adherence_pct"] = round((sla_on_time / sla_eligible) * 100.0, 1) if sla_eligible else 100.0
+        out["metrics"]["avg_cycle_time_days"] = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else 0.0
+        out["metrics"]["weighted_velocity"] = round(weighted_vel, 1)
+        out["metrics"]["sla_missed_count"] = sla_missed
+
+        out["by_status"]["open"] = open_t
+        out["by_status"]["completed"] = completed
+
+        out["by_assignee"] = [
+            {"assignee": k, "total": v["total"], "completed": v["completed"], "open": v["open"],
+             "completion_rate_pct": round((v["completed"] / v["total"]) * 100.0, 1) if v["total"] else 0.0}
+            for k, v in sorted(assignee_map.items(), key=lambda x: x[1]["total"], reverse=True)[:20]
+        ]
+        out["by_project"] = [
+            {"project": k, "count": v}
+            for k, v in sorted(project_map.items(), key=lambda x: x[1], reverse=True)[:20]
+        ]
+        out["by_month"] = [
+            {"month": k, "completed_count": v}
+            for k, v in sorted(month_map.items(), reverse=True)[:12]
+        ]
+        out["by_priority"] = [
+            {"priority": k, "count": v}
+            for k, v in sorted(priority_map.items(), key=lambda x: x[1], reverse=True)
+        ]
     except Exception:
         pass
     return out

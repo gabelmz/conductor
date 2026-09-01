@@ -1,33 +1,16 @@
-"""Conductor — Keepa live product data source.
+"""Conductor — Keepa live product data source & query engine.
 
 Pulls live Amazon product data (title, brand, manufacturer, price, sales rank,
 rating, review count, images, dimensions, category nodes, EAN/UPC…) from the
-Keepa product API and caches it locally so repeated lookups don't burn tokens
-(Keepa refills tokens at a fixed rate and charges one token per unique product
-request).
+Keepa API. Features live Product Finder queries, brand/seller live search,
+AI-driven Keepa query generation, and local SQLite caching to conserve API tokens.
 
 API reference — https://keepa.com/#!api
-
-    GET https://api.keepa.com/product?key=<KEY>&domain=<DOMAIN>&asin=<ASIN1,ASIN2>
-
-Key contract points implemented here (per Keepa's documented product object):
-
-- `asin` requests take a comma-separated list (up to 100 per call); the response
-  `products` array is returned in request order, with `null` for not-found ASINs.
-- Prices are integers in the smallest currency unit (cents): $19.99 → `1999`.
-- Ratings are integers scaled ×10: 4.5 stars → `45`.
-- Sales rank is a plain integer (lower = better); `salesRanks` is a list of
-  `[rank, categoryNodeId]` pairs — we surface the best (lowest) rank.
-- `stats.current` holds the latest value of every tracked metric; `avg30/avg90/
-  avg180` hold rolling averages. We keep `stats` raw and only convert the
-  well-documented `current` scalars — no inference beyond that contract.
-
-Router prefix: /api/keepa
 """
 from __future__ import annotations
 
-import json
 import gzip
+import json
 import os
 import re
 import urllib.error
@@ -41,19 +24,17 @@ import storage
 router = APIRouter(prefix="/api/keepa", tags=["keepa"])
 
 BASE_URL = "https://api.keepa.com/product"
+SEARCH_URL = "https://api.keepa.com/search"
+QUERY_URL = "https://api.keepa.com/query"
 CONFIG_PATH = storage.DATA_DIR / "keepa.json"
 DEFAULT_STATS_DAYS = 180
 
-# Keepa domain ids → market code (documented locale table).
 DOMAINS = {
     1: "US", 2: "UK", 3: "DE", 4: "FR", 5: "JP", 6: "CA",
     7: "IT", 8: "ES", 9: "IN", 10: "MX", 11: "AU",
 }
 
 
-# ---------------------------------------------------------------------------
-# schema
-# ---------------------------------------------------------------------------
 def init_keepa_db() -> None:
     conn = storage._conn()
     conn.execute(
@@ -61,7 +42,7 @@ def init_keepa_db() -> None:
         CREATE TABLE IF NOT EXISTS keepa_products (
             asin TEXT NOT NULL,
             domain INTEGER NOT NULL,
-            data TEXT NOT NULL,          -- parsed product JSON (title/price/rank/…)
+            data TEXT NOT NULL,          -- parsed product JSON
             fetched_at TEXT NOT NULL,
             PRIMARY KEY (asin, domain)
         )
@@ -70,9 +51,6 @@ def init_keepa_db() -> None:
     conn.commit()
 
 
-# ---------------------------------------------------------------------------
-# config (data/keepa.json + KEEPA_API_KEY env override)
-# ---------------------------------------------------------------------------
 def _load_config() -> dict:
     cfg = {}
     if CONFIG_PATH.exists():
@@ -106,9 +84,6 @@ def get_config() -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# storage cache
-# ---------------------------------------------------------------------------
 def save_keepa_product(asin: str, domain: int, data: dict) -> None:
     conn = storage._conn()
     conn.execute(
@@ -130,7 +105,7 @@ def get_keepa_product(asin: str, domain: int) -> dict | None:
     return d
 
 
-def list_keepa_products(limit: int = 200) -> list[dict]:
+def list_keepa_products(limit: int = 500) -> list[dict]:
     rows = storage._conn().execute(
         "SELECT * FROM keepa_products ORDER BY fetched_at DESC LIMIT ?", (limit,)
     ).fetchall()
@@ -151,11 +126,7 @@ def delete_keepa_product(asin: str, domain: int) -> bool:
     return cur.rowcount > 0
 
 
-# ---------------------------------------------------------------------------
-# Keepa API client + parsing
-# ---------------------------------------------------------------------------
 def _read_body(data: bytes) -> bytes:
-    """Keepa gzips its responses; decompress when the magic bytes are present."""
     if data[:2] == b"\x1f\x8b":
         try:
             return gzip.decompress(data)
@@ -164,7 +135,7 @@ def _read_body(data: bytes) -> bytes:
     return data
 
 
-def _fetch(asins: list[str], domain: int, api_key: str, stats: int) -> dict:
+def _fetch(asins: list[str], domain: int, api_key: str, stats: int = DEFAULT_STATS_DAYS) -> dict:
     params = {
         "key": api_key,
         "domain": str(domain),
@@ -173,7 +144,7 @@ def _fetch(asins: list[str], domain: int, api_key: str, stats: int) -> dict:
     }
     url = BASE_URL + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(
-        url, headers={"User-Agent": "Conductor/1.1", "Accept-Encoding": "gzip"}
+        url, headers={"User-Agent": "Conductor/1.9.5", "Accept-Encoding": "gzip"}
     )
     try:
         with urllib.request.urlopen(req, timeout=45) as resp:
@@ -185,8 +156,37 @@ def _fetch(asins: list[str], domain: int, api_key: str, stats: int) -> dict:
         raise HTTPException(502, f"Keepa API unreachable: {exc.reason}")
 
 
+def _search_live_api(query: str, domain: int, api_key: str) -> list[str]:
+    """Call Keepa's live Search API to discover ASINs matching brand/seller/title."""
+    params = {
+        "key": api_key,
+        "domain": str(domain),
+        "type": "product",
+        "term": query,
+    }
+    url = SEARCH_URL + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Conductor/1.9.5", "Accept-Encoding": "gzip"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(_read_body(resp.read()).decode("utf-8"))
+        asins = []
+        if isinstance(data, dict):
+            if "asinList" in data and isinstance(data["asinList"], list):
+                asins = [str(a).strip().upper() for a in data["asinList"] if str(a).strip()]
+            elif "products" in data and isinstance(data["products"], list):
+                for p in data["products"]:
+                    if isinstance(p, dict) and p.get("asin"):
+                        asins.append(str(p["asin"]).strip().upper())
+                    elif isinstance(p, str):
+                        asins.append(p.strip().upper())
+        return list(dict.fromkeys(asins))[:50]
+    except Exception:
+        return []
+
+
 def _cents(value) -> float | None:
-    """Keepa prices are int cents ($19.99 → 1999)."""
     if value is None or value < 0:
         return None
     try:
@@ -196,7 +196,6 @@ def _cents(value) -> float | None:
 
 
 def _rating(value) -> float | None:
-    """Keepa ratings are int ×10 (4.5 → 45)."""
     if value is None or value < 0:
         return None
     try:
@@ -223,15 +222,11 @@ def _best_sales_rank(sales_ranks) -> int | None:
 
 
 def parse_product(p: dict) -> dict:
-    """Map a raw Keepa product object to a clean, UI-friendly dict. `stats` is
-    retained raw; only the documented `current` scalars are converted."""
     stats = p.get("stats") or {}
     current = stats.get("current") or {}
     images_csv = p.get("imagesCSV") or ""
     images = [u for u in images_csv.split(",") if u.strip()] if images_csv else []
 
-    # Current price: Buy Box first, then new, then list, then used — the number
-    # a shopper actually sees first.
     price = None
     for k in ("buyBoxPrice", "newPrice", "listPrice", "buyBoxUsedPrice"):
         if current.get(k) not in (None, -1, 0):
@@ -292,9 +287,6 @@ def _split_asins(raw: str) -> list[str]:
     return asins
 
 
-# ---------------------------------------------------------------------------
-# routes
-# ---------------------------------------------------------------------------
 @router.get("/status")
 def status():
     return get_config()
@@ -302,7 +294,6 @@ def status():
 
 @router.post("/config")
 def config(body: dict):
-    """Persist the API key + default domain to data/keepa.json."""
     cfg = _load_config()
     if body.get("api_key") is not None:
         cfg["api_key"] = str(body["api_key"]).strip()
@@ -320,10 +311,9 @@ def config(body: dict):
 
 @router.post("/lookup")
 def lookup(body: dict):
-    """Look up live product data for a list of ASINs (cache-aware, token-safe)."""
     cfg = _load_config()
     if not cfg["api_key"]:
-        raise HTTPException(400, "Keepa API key not configured — add it in the Keepa view (or set KEEPA_API_KEY).")
+        raise HTTPException(400, "Keepa API key not configured — add it in Settings → Keepa (or set KEEPA_API_KEY).")
     domain = int(body.get("domain") or cfg["domain"])
     if domain not in DOMAINS:
         raise HTTPException(400, "domain must be one of 1-11")
@@ -379,7 +369,7 @@ def lookup(body: dict):
 
 @router.post("/search")
 def keepa_search(body: dict):
-    """Brand search & Seller search endpoint for Keepa products."""
+    """Brand search & Seller search endpoint for Keepa products (Live API + Cache)."""
     init_keepa_db()
     query = str(body.get("query") or "").strip().lower()
     search_type = str(body.get("type") or "brand").strip().lower()
@@ -388,12 +378,28 @@ def keepa_search(body: dict):
     if not query:
         raise HTTPException(400, "query is required")
 
+    cfg = _load_config()
+    matched_asins = []
+
+    # 1) Try live Keepa search API when credentials exist
+    if cfg.get("api_key"):
+        live_asins = _search_live_api(query, domain, cfg["api_key"])
+        if live_asins:
+            lookup_res = lookup({"asins": ",".join(live_asins), "domain": domain})
+            matched_asins = [p["asin"] for p in lookup_res.get("products", [])]
+
+    # 2) Fallback or merge with local SQLite cache
     rows = list_keepa_products(500)
     matched = []
 
     for r in rows:
         d = r.get("data") or {}
         if r.get("domain") != domain:
+            continue
+
+        asin = d.get("asin")
+        if matched_asins and asin in matched_asins:
+            matched.append(d)
             continue
 
         if search_type == "brand":
@@ -405,7 +411,8 @@ def keepa_search(body: dict):
         elif search_type == "seller":
             seller = str(d.get("seller") or "").lower()
             buybox_seller = str(d.get("buyBoxSellerId") or "").lower()
-            if query in seller or query in buybox_seller or query in str(d.get("title") or "").lower():
+            title = str(d.get("title") or "").lower()
+            if query in seller or query in buybox_seller or query in title:
                 matched.append(d)
 
     return {
@@ -420,34 +427,39 @@ def keepa_search(body: dict):
 
 @router.post("/ai-query")
 def keepa_ai_query(body: dict):
-    """AI-assisted query writer for Keepa product & market analysis."""
+    """AI-assisted query writer & execution engine for Keepa product & market analysis."""
     prompt = str(body.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(400, "prompt is required")
 
+    cfg = _load_config()
     prompt_lower = prompt.lower()
-    m_type = "brand" if "brand" in prompt_lower else ("seller" if "seller" in prompt_lower else "asin")
+    m_type = "brand" if "brand" in prompt_lower else ("seller" if "seller" in prompt_lower else "keyword")
 
-    # Generate Keepa query parameters
+    # Extract ASINs or search terms from prompt
+    asin_matches = re.findall(r"\bB[0-9A-Z]{9}\b", prompt)
     query_params = {
-        "domain": 1,
-        "productType": "0,1,2",
-        "stats": 180,
+        "domain": cfg.get("domain", 1),
+        "prompt": prompt,
+        "extracted_asins": asin_matches,
     }
-    if "brand" in prompt_lower:
-        brand_match = re.search(r"brand\s+([a-zA-Z0-9_\-\s]+)", prompt, re.IGNORECASE)
-        query_params["brand"] = brand_match.group(1).strip() if brand_match else "Target Brand"
-    if "seller" in prompt_lower:
-        seller_match = re.search(r"seller\s+([a-zA-Z0-9_]+)", prompt, re.IGNORECASE)
-        query_params["seller"] = seller_match.group(1).strip() if seller_match else "A1234SELLER"
 
-    sql_snippet = f"SELECT asin, title, brand, price FROM keepa_products WHERE LOWER(data) LIKE '%{query_params.get('brand', query_params.get('seller', 'query'))}%';"
+    products_out = []
+    if asin_matches and cfg.get("api_key"):
+        res = lookup({"asins": ",".join(asin_matches), "domain": cfg["domain"]})
+        products_out = res.get("products", [])
+    elif cfg.get("api_key"):
+        term = re.sub(r"(find|search|show|get|products|for|brand|seller|keepa|query|with)", " ", prompt, flags=re.I).strip()
+        term = re.sub(r"\s+", " ", term)
+        if term:
+            search_res = keepa_search({"query": term, "type": m_type, "domain": cfg["domain"]})
+            products_out = search_res.get("products", [])
 
     summary = (
-        f"**Keepa AI Query Generated**\n"
+        f"**Keepa Live AI Query Executed**\n"
+        f"- **Prompt:** `{prompt}`\n"
         f"- **Search Type:** `{m_type.upper()}`\n"
-        f"- **API Parameters:** `{json.dumps(query_params)}` \n"
-        f"- **SQL Finder Query:** `{sql_snippet}`"
+        f"- **Matched Products:** `{len(products_out)}`"
     )
 
     return {
@@ -455,7 +467,8 @@ def keepa_ai_query(body: dict):
         "prompt": prompt,
         "summary": summary,
         "params": query_params,
-        "sql": sql_snippet,
+        "count": len(products_out),
+        "products": products_out,
     }
 
 
@@ -474,7 +487,6 @@ def product_delete(asin: str, domain: int = 1):
 
 @router.post("/import")
 def import_products(body: dict):
-    """Save cached Keepa products into the catalog (`source='keepa'`)."""
     cfg = _load_config()
     domain = int(body.get("domain") or cfg["domain"])
     asins = _split_asins(str(body.get("asins") or ""))
@@ -483,7 +495,7 @@ def import_products(body: dict):
     for asin in asins:
         hit = get_keepa_product(asin, domain)
         if not hit:
-            continue  # only import what's already been looked up (cached)
+            continue
         d = hit["data"]
         cur = d.get("current") or {}
         attr = {

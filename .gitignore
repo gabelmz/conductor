@@ -19,3 +19,4 @@ desktop/gh-token
 
 # Packaging output
 dist/
+dist-v*-publish/

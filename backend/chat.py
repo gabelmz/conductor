@@ -88,19 +88,20 @@ DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_PROVIDER = "deepseek"
 
-SYSTEM_PROMPT = """You are Salmon, the Business Process Automation Specialist copilot running inside Conductor — a desktop app for Luminize (a top-5 Amazon seller managing 80+ brands). You live next to a live process-discovery board, an automation engine (Asana/Google/HubSpot/Zapier/Make handoffs), AI workflow runs, and an SOP/runbook library — all visible through context injected into this conversation.
+DEFAULT_SYSTEM_PROMPT = """You are Conductor Assistant, the user copilot running inside Conductor — a desktop workbench for Luminize (managing 80+ Amazon brands and multi-channel marketplaces).
 
-Your tone: direct, practical, no fluff — like a sharp ops colleague. Answer in the same language the user writes in.
+Your primary role:
+- Guide and assist users in navigating Conductor, managing tasks, inspecting catalog data, running AI workflows, and automating operations.
+- Act as a thoughtful, articulate, user-focused assistant.
+- Before making structural changes to the app, altering catalog schemas, or modifying automation pipelines, consult or delegate to specialist agents like Franky (Catalog Architect & Operations Engineer) or trigger the appropriate specialized agent workflow.
 
-What you do well:
-- Process discovery: help scope vague business problems into shippable MVPs; quantify hours/errors/delays; push back when a process should be redesigned before it is automated.
-- Automation design: propose trigger → condition → action chains (e.g. a completed Supply Chain task that opens a Catalog task with inputs pre-populated); advise on REST/webhook basics (auth, pagination, rate limits).
-- AI integration: pick the right LLM workflow (feedback categorization, transcript summarization, document parsing, action extraction, SOP drafting) and judge where a human should review.
-- Governance: draft SOPs/runbooks, define guardrails, validation, and exception handling.
+Specialist Agents Available:
+- Franky: Senior Catalog Architect & Automation Specialist (multi-format parsing, Keepa live queries, Asana sync, catalog schemas).
+- Asana Harvester: Asana task, subtask, story, and custom field synchronization.
+- Keepa Analyst: Price history, Buy Box tracking, and sales rank analysis.
+- Flow Canvas & Asana Rules: Node-graph flow builders and trigger-action automations.
 
-In-app moves to suggest: log a process in Process Discovery, build an automation, run an AI workflow, search SOPs, connect an integration in Settings. When you don't know something, say so and suggest a concrete action in the app.
-
-Keep answers under ~200 words unless asked for depth. Use markdown-lite (bold, code, short lists) — no huge tables."""
+Tone: Helpful, clear, proactive, and practical. Keep responses focused and concise unless detailed depth is requested."""
 
 
 def _load_config() -> dict:
@@ -115,6 +116,7 @@ def _load_config() -> dict:
         "base_url": (cfg.get("base_url") or DEFAULT_BASE_URL).rstrip("/"),
         "model": cfg.get("model") or DEFAULT_MODEL,
         "api_key": cfg.get("api_key") or os.environ.get("DEEPSEEK_API_KEY", ""),
+        "system_prompt": cfg.get("system_prompt") or DEFAULT_SYSTEM_PROMPT,
         "llama_model": cfg.get("llama_model") or "",
         "llama_ctx": int(cfg.get("llama_ctx") or 4096),
         "llama_port": int(cfg.get("llama_port") or 8098),
@@ -164,6 +166,7 @@ def get_config():
         "provider": cfg["provider"],
         "base_url": cfg["base_url"],
         "model": cfg["model"],
+        "system_prompt": cfg.get("system_prompt") or DEFAULT_SYSTEM_PROMPT,
         "llama_model": cfg["llama_model"],
         "llama_ctx": cfg["llama_ctx"],
         "llama_port": cfg["llama_port"],
@@ -182,7 +185,11 @@ def set_config(body: dict):
         cfg["model"] = str(body["model"]).strip()
     if body.get("base_url"):
         cfg["base_url"] = str(body["base_url"]).strip().rstrip("/")
-    if body.get("provider") in ("deepseek", "llama"):
+    if "system_prompt" in body:
+        cfg["system_prompt"] = str(body.get("system_prompt") or "").strip() or DEFAULT_SYSTEM_PROMPT
+    import providers as providers_mod
+
+    if body.get("provider") in providers_mod.HOSTED_PROVIDERS or body.get("provider") == "llama":
         cfg["provider"] = str(body["provider"])
     # LAW-style per-provider patches: {providers: {pid: {mode, baseUrl, defaultModelId, enabled}}}
     prov_patches = body.get("providers")
@@ -224,6 +231,7 @@ def set_config(body: dict):
         "provider": cfg["provider"],
         "model": cfg["model"],
         "base_url": cfg["base_url"],
+        "system_prompt": cfg["system_prompt"],
         "llama_model": cfg["llama_model"],
         "llama_ctx": cfg["llama_ctx"],
         "llama_port": cfg["llama_port"],
@@ -277,7 +285,8 @@ async def chat(body: dict):
             extra += ("\n[REFERENCED DOCUMENTS — quoted content the user attached; answer "
                       "grounded in it and cite the filename]\n" + "\n\n".join(parts) + "\n")
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT + _context_block() + extra}]
+    sys_prompt = cfg.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
+    messages = [{"role": "system", "content": sys_prompt + _context_block() + extra}]
     messages.extend(history)
     messages.append({"role": "user", "content": message})
 
@@ -368,6 +377,53 @@ def delete_key(provider_id: str):
     if not removed:
         raise HTTPException(404, f"No key stored for '{provider_id}'")
     return {"ok": True, "providerId": provider_id}
+
+
+@router.get("/models")
+def list_all_models():
+    """List models available across all registered providers."""
+    import providers
+
+    models = []
+    for p in providers.available_providers():
+        if p.get("configured"):
+            for m in p.get("models") or []:
+                models.append({
+                    "id": m["id"],
+                    "provider": p["id"],
+                    "provider_label": p["label"],
+                })
+    return {"models": models}
+
+
+@router.post("/embeddings")
+@router.post("/embed")
+async def create_embeddings(body: dict):
+    """Generate embeddings using the configured or requested provider."""
+    input_val = body.get("input") or body.get("text")
+    if not input_val:
+        raise HTTPException(400, "'input' or 'text' parameter is required")
+
+    cfg = _load_config()
+    provider = str(body.get("provider") or cfg.get("provider") or "openai")
+    model = body.get("model") or None
+    api_key = str(body.get("api_key") or "").strip() or None
+
+    import providers as providers_mod
+
+    key = providers_mod.resolve_api_key(provider, api_key)
+    adapter = providers_mod.build_adapter(provider, key)
+    if not adapter:
+        raise HTTPException(400, f"Provider '{provider}' is not configured or missing API key.")
+
+    if not hasattr(adapter, "embed"):
+        raise HTTPException(400, f"Provider '{provider}' does not support embeddings.")
+
+    try:
+        res = adapter.embed(input_val, model=model)
+        return res
+    except Exception as exc:
+        raise HTTPException(500, f"Embedding generation failed: {exc}")
 
 
 def _llama_chat(messages: list[dict], cfg: dict) -> StreamingResponse:

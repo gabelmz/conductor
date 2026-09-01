@@ -431,12 +431,28 @@ def run_quick_action(agent_id: str) -> dict:
         }
     if action == "asana_kpi_harvester":
         import storage
-        counts = storage.asana_counts()
-        tasks = storage.list_asana_tasks(limit=10)
+        summary_data = storage.asana_summary()
+        m = summary_data.get("metrics") or {}
         return {
-            "title": "Asana KPI Harvester — Sync Pipeline",
-            "summary": f"{counts.get('tasks', 0)} Asana tasks synced ({counts.get('open', 0)} open, {counts.get('overdue', 0)} overdue).",
-            "rows": [{"task": t["name"], "assignee": t.get("assignee_name") or "—", "due": t.get("due_on") or "—"} for t in tasks],
+            "title": "Asana KPI Harvester — Performance & Velocity Report",
+            "summary": (
+                f"{m.get('total_tasks', 0)} Tasks ({m.get('completion_rate_pct', 0)}% Completed) · "
+                f"SLA Adherence: {m.get('sla_adherence_pct', 0)}% · "
+                f"Avg Cycle Time: {m.get('avg_cycle_time_days', 0)}d · "
+                f"Weighted Velocity: {m.get('weighted_velocity', 0)} pts · "
+                f"Overdue: {m.get('overdue_tasks', 0)}"
+            ),
+            "rows": [
+                {
+                    "assignee": a["assignee"],
+                    "total_tasks": a["total"],
+                    "completed": a["completed"],
+                    "open": a["open"],
+                    "completion_rate": f"{a['completion_rate_pct']}%",
+                }
+                for a in summary_data.get("by_assignee", [])[:15]
+            ],
+            "metrics": m,
         }
     if action in ("parker", "products"):
         products = scan_compliance_products()

@@ -306,7 +306,8 @@ function readUpdateToken() {
 function setupAutoUpdater() {
   if (!app.isPackaged) return; // dev / smoke runs never check for updates
   try { autoUpdater = require('electron-updater').autoUpdater; } catch { return; }
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.allowDowngrade = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   // Forward every updater event to the renderer (About → Software update) so
@@ -316,7 +317,18 @@ function setupAutoUpdater() {
   };
 
   autoUpdater.on('checking-for-update', () => emit('checking-for-update'));
-  autoUpdater.on('update-available', (info) => emit('update-available', { version: info && info.version }));
+  autoUpdater.on('update-available', (info) => {
+    const curVer = app.getVersion();
+    if (info && info.version && info.version === curVer) {
+      emit('update-not-available', { version: curVer });
+      return;
+    }
+    emit('update-available', { version: info && info.version });
+    // Explicitly download only when a genuinely higher version exists
+    if (info && info.version && info.version !== curVer) {
+      autoUpdater.downloadUpdate().catch(() => {});
+    }
+  });
   autoUpdater.on('update-not-available', (info) => emit('update-not-available', { version: info && info.version }));
   autoUpdater.on('download-progress', (p) => emit('download-progress', {
     percent: Math.round(p.percent || 0), transferred: p.transferred, total: p.total,
@@ -344,7 +356,7 @@ function setupAutoUpdater() {
       ...(token ? { token } : {}),
     });
   } catch { /* keep electron-builder publish defaults */ }
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  autoUpdater.checkForUpdates().catch(() => {});
 }
 
 // --- updates IPC (About → Software update) ---------------------------------

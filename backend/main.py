@@ -47,6 +47,9 @@ from productpipeline import init_product_pipeline_db
 from insights import init_insights_db
 from attributeaudit import init_attribute_audit_db
 from kpi import init_kpi_db, seed_kpis_from_excel, kpi_router, wrangler_router
+from reporting.team_kpis import router as asana_kpis_router
+from reporting.listing_content import init_listing_compare_db, router as listing_compare_router
+from spine import init_spine_db, router as spine_router
 from brand_onboarding import onboarding_router
 
 init_hub_db()
@@ -57,6 +60,8 @@ init_product_pipeline_db()
 init_insights_db()
 init_attribute_audit_db()
 init_kpi_db()
+init_spine_db()
+init_listing_compare_db()
 seed_kpis_from_excel()
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -64,7 +69,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.9.5",
+    version="1.9.6",
 )
 
 app.add_middleware(
@@ -695,6 +700,80 @@ def asana_teams():
     return storage.list_asana_teams()
 
 
+@app.get("/api/asana/custom-fields")
+def asana_custom_fields():
+    rows = storage._conn().execute("SELECT * FROM asana_custom_fields ORDER BY name").fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/asana/subtasks")
+def asana_subtasks(parent_gid: str | None = None, limit: int = 100):
+    if parent_gid:
+        return storage.list_asana_subtasks(parent_gid, limit)
+    rows = storage._conn().execute("SELECT * FROM asana_subtasks LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/asana/stories")
+def asana_stories(task_gid: str | None = None, limit: int = 100):
+    if task_gid:
+        return storage.list_asana_stories(task_gid, limit)
+    rows = storage._conn().execute("SELECT * FROM asana_stories LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/asana/attachments")
+def asana_attachments(task_gid: str | None = None, limit: int = 100):
+    if task_gid:
+        return storage.list_asana_attachments(task_gid, limit)
+    rows = storage._conn().execute("SELECT * FROM asana_attachments LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/asana/tasks/create")
+def asana_create_task(body: dict):
+    """Create a task in Asana via REST API."""
+    import asana_sync
+
+    if not asana_sync.has_credentials():
+        raise HTTPException(400, "Asana PAT not configured")
+    headers = asana_sync._headers()
+    data = body.get("data") or body
+    res = asana_sync.api_post(headers, "/tasks", {"data": data}) if hasattr(asana_sync, "api_post") else None
+    if not res:
+        # Fallback post using urllib
+        req = urllib.request.Request(
+            f"{asana_sync.BASE_URL}/tasks",
+            data=json.dumps({"data": data}).encode("utf-8"),
+            headers={**headers, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            res = json.loads(r.read().decode("utf-8"))
+    return res
+
+
+@app.post("/api/asana/tasks/{gid}/comments")
+def asana_add_comment(gid: str, body: dict):
+    """Add a story/comment to an Asana task."""
+    import asana_sync
+
+    if not asana_sync.has_credentials():
+        raise HTTPException(400, "Asana PAT not configured")
+    headers = asana_sync._headers()
+    text = str(body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "text is required")
+    req = urllib.request.Request(
+        f"{asana_sync.BASE_URL}/tasks/{gid}/stories",
+        data=json.dumps({"data": {"text": text}}).encode("utf-8"),
+        headers={**headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
 @app.get("/api/asana/summary")
 def asana_summary():
     return {"counts": storage.asana_counts(), "kpis": storage.asana_summary(),
@@ -932,6 +1011,9 @@ app.include_router(attributeaudit_router)
 app.include_router(hf_router)
 app.include_router(mcp_router)
 app.include_router(supabase_sync_router)
+app.include_router(spine_router)
+app.include_router(asana_kpis_router)
+app.include_router(listing_compare_router)
 app.include_router(kpi_router)
 app.include_router(wrangler_router)
 app.include_router(onboarding_router)

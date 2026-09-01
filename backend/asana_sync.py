@@ -410,6 +410,20 @@ def _store_task(storage, headers: dict, task: dict, proj_map: dict,
             "name": cf.get("name", ""),
             "type": cf.get("resource_subtype", ""),
             "value": _cf_display(cf),
+            "raw": cf,
+        })
+
+    # Preserve every membership as a normalized fact: team KPI reporting cannot
+    # depend on Asana's arbitrary first membership.
+    membership_facts = []
+    for membership in memberships:
+        project_ref = membership.get("project") or {}
+        project = proj_map.get(project_ref.get("gid")) or {}
+        team_ref = project.get("team") or {}
+        membership_facts.append({
+            **membership,
+            "team_gid": team_ref.get("gid", ""),
+            "team_name": team_ref.get("name", ""),
         })
 
     storage.upsert_asana_task(
@@ -429,9 +443,11 @@ def _store_task(storage, headers: dict, task: dict, proj_map: dict,
         num_subtasks=int(task.get("num_subtasks") or 0),
         tags=tags, followers=followers, dependencies=deps, dependents=dependents,
         notes=task.get("notes") or "",
-        custom_fields=custom_fields, memberships=memberships,
+        custom_fields=custom_fields, memberships=membership_facts,
         weight=task_weight(task.get("name", "")),
     )
+    storage.replace_asana_task_memberships(task["gid"], membership_facts)
+    storage.replace_asana_task_custom_fields(task["gid"], custom_fields)
 
     # Stories / comments (deep sync only — lazy otherwise)
     if not deep:

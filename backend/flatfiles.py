@@ -94,20 +94,62 @@ def _norm_key(s: str) -> str:
 @router.post("/upload", status_code=201)
 async def upload_template(file: UploadFile = File(...), product_type: str = Form("Uploaded")):
     raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(413, "Template file too large (max 5MB)")
-    text = raw.decode("utf-8-sig", errors="replace")
-    lines = text.splitlines()
-    delim = "\t" if (lines and "\t" in lines[0]) else ","
-    rows = [r for r in csv.reader(io.StringIO(text), delimiter=delim)
-            if any(str(c).strip() for c in r)]
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(413, "Template file too large (max 20MB)")
+
+    filename = file.filename or "uploaded-template.csv"
+    ext = Path(filename).suffix.lower()
+    rows = []
+
+    if ext in (".xlsx", ".xlsm", ".xlsb"):
+        import tempfile, os
+        tmp = Path(tempfile.gettempdir()) / f"tmpl_{os.getpid()}_{filename}"
+        tmp.write_bytes(raw)
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(tmp, read_only=True, data_only=True)
+            ws = wb[wb.sheetnames[0]]
+            for r in ws.iter_rows(values_only=True):
+                if any(v not in (None, "") for v in r):
+                    rows.append([str(v or "").strip() for v in r])
+            wb.close()
+        except Exception:
+            pass
+        finally:
+            tmp.unlink(missing_ok=True)
+    elif ext in (".md", ".markdown"):
+        text = raw.decode("utf-8-sig", errors="replace")
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("|") and line.endswith("|") and "|" in line[1:-1]:
+                cols = [c.strip() for c in line.strip("|").split("|")]
+                if cols and not re.match(r"^:?-+:?$", cols[0]):
+                    rows.append(cols)
+    elif ext == ".json":
+        try:
+            obj = json.loads(raw.decode("utf-8-sig", errors="replace"))
+            if isinstance(obj, list) and obj and isinstance(obj[0], dict):
+                header = list(obj[0].keys())
+                rows.append(header)
+                for item in obj:
+                    rows.append([str(item.get(k, "")) for k in header])
+        except Exception:
+            pass
+
     if not rows:
-        raise HTTPException(400, "Template file is empty")
+        text = raw.decode("utf-8-sig", errors="replace")
+        lines = [l for l in text.splitlines() if l.strip() and not l.strip().startswith(("#", "//"))]
+        delim = "\t" if (lines and ("\t" in lines[0] or ext in (".tsv", ".tab"))) else (";" if lines and ";" in lines[0] else ",")
+        rows = [r for r in csv.reader(io.StringIO("\n".join(lines)), delimiter=delim)
+                if any(str(c).strip() for c in r)]
+
+    if not rows:
+        raise HTTPException(400, "Template file is empty or unparseable")
+
     header = [str(c).strip() for c in rows[0]]
     if not header or not any(header):
         raise HTTPException(400, "Template file has no header row")
 
-    # Second row is treated as machine keys when it is already normalized.
     keys = None
     if len(rows) > 1 and len(rows[1]) == len(header):
         cand = [str(c).strip() for c in rows[1]]
