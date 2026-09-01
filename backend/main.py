@@ -69,7 +69,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="1.9.6",
+    version="2.0.0",
 )
 
 app.add_middleware(

@@ -1821,7 +1821,7 @@ async function renderSettingsTab(tab) {
     if (window.desktop && window.desktop.getUpdateInfo) {
       try { updInfo = await window.desktop.getUpdateInfo(); } catch { /* */ }
     }
-    const updVer = (updInfo && updInfo.version) || a.version || '1.9.6';
+    const updVer = (updInfo && updInfo.version) || a.version || '2.0.0';
     const canUpdate = !!(updInfo && updInfo.isPackaged);
     box.innerHTML = `
       <div class="settings-pane active">
@@ -1858,7 +1858,8 @@ async function renderSettingsTab(tab) {
             <label class="field" style="flex:1;">
               <span>Release Target</span>
               <select id="upd-version-select" class="input-select" style="width:100%; height:32px; padding:0 8px;">
-                <option value="1.9.6">v1.9.6 (Current / Latest)</option>
+                <option value="2.0.0">v2.0.0 (Current / Latest)</option>
+                <option value="1.9.6">v1.9.6</option>
                 <option value="1.9.5">v1.9.5</option>
                 <option value="1.7.0">v1.7.0</option>
                 <option value="1.6.0">v1.6.0</option>
@@ -2070,7 +2071,7 @@ async function refreshStatusbar() {
     $('#status-tokens').textContent = `${fmtNum((tu.total_tokens || 0) + (tu.input_tokens || 0) + (tu.output_tokens || 0))} tok`;
     const as = (st.connections && st.connections.asana) || {};
     $('#status-conn').textContent = `asana ${fmtNum(as.tasks || 0)} · ${st.automations !== undefined ? fmtNum(state.stats.automations ? (state.stats.automations.total || 0) : 0) : ''} automations · db ${(st.db_size || 0) / 1024 / 1024 >= 1 ? (st.db_size / 1024 / 1024).toFixed(1) + 'MB' : fmtNum(st.db_size) + 'B'}`;
-    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '1.9.6'}`;
+    $('#status-text').textContent = `Connected · ${st.service || 'conductor'} v${st.version || '2.0.0'}`;
   } catch { /* statusbar is best-effort */ }
 }
 

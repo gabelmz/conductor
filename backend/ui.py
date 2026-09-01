@@ -202,7 +202,7 @@ def about():
             pass
     return {
         "name": "Conductor",
-        "version": "1.9.6",
+        "version": "2.0.0",
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "data_dir": str(DATA_DIR),
