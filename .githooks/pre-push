@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Permanent pre-push guard for the conductor repo (wired via core.hooksPath).
 #
-# Rule: refs/heads/main is RELEASE-ONLY. A push to main is allowed only when
-#   (a) the same push also carries a refs/tags/v* tag, or
-#   (b) the pushed commit is exactly tagged v* locally (git describe).
-# Every other branch (staging, features) pushes normally — that is the default.
-# Violators are blocked with a hint to push to staging instead.
+# Rules:
+#   1. refs/heads/main is RELEASE-ONLY. A push to main is allowed only when
+#      the same push carries a refs/tags/v* tag, or HEAD is exactly tagged v*.
+#      Violators are blocked with a hint to push to staging instead.
+#   2. A release push (main + v* tag) MUST have a CHANGELOG.md at HEAD that
+#      mentions the released version. Changelogs are authored by SILENT
+#      SUBAGENTS ONLY (delegate_task) — never hand-written in chat.
+# Every other branch (staging, features) pushes normally.
 
 set -u
 
@@ -15,6 +18,7 @@ while IFS= read -r line; do lines+=("$line"); done
 
 pushing_main=0
 tag_in_push=0
+tag_ver=""
 main_sha=""
 
 for line in "${lines[@]}"; do
@@ -23,19 +27,34 @@ for line in "${lines[@]}"; do
   remote_ref=$(echo "$line" | awk '{print $3}')
   case "$local_ref" in
     refs/heads/main) pushing_main=1; main_sha="$local_sha" ;;
-    refs/tags/v*)    tag_in_push=1 ;;
+    refs/tags/v*)    tag_in_push=1; tag_ver="${local_ref#refs/tags/v}" ;;
   esac
 done
 
-if [ "$pushing_main" = "1" ] && [ "$tag_in_push" = "0" ]; then
-  if git describe --tags --exact-match "$main_sha" >/dev/null 2>&1 \
+[ "$pushing_main" = "0" ] && exit 0
+
+# --- main push: must be a release push (v* tag) ---
+if [ "$tag_in_push" = "1" ]; then
+  ver="$tag_ver"
+elif git describe --tags --exact-match "$main_sha" >/dev/null 2>&1 \
      && git describe --tags --exact-match "$main_sha" | grep -q '^v'; then
-    exit 0
-  fi
+  ver=$(git describe --tags --exact-match "$main_sha" | sed 's/^v//')
+else
   echo ""
   echo "⛔ main is release-only: this push has no v* release tag (and HEAD is not tagged)."
   echo "   Defaulting to staging — push your branch there instead:"
   echo "      git push origin HEAD:staging"
+  echo ""
+  exit 1
+fi
+
+# --- release push: changelog must exist and mention the version ---
+if ! git show "HEAD:CHANGELOG.md" 2>/dev/null | grep -qE "(^|[^0-9])${ver}([^0-9]|$)"; then
+  echo ""
+  echo "⛔ release v${ver} has no CHANGELOG.md entry at HEAD."
+  echo "   Changelogs are written by SILENT SUBAGENTS ONLY — dispatch one:"
+  echo "      delegate_task → 'write CHANGELOG.md entry for v${ver} from git log v<prev>..HEAD'"
+  echo "   Then commit CHANGELOG.md and retry the push."
   echo ""
   exit 1
 fi
