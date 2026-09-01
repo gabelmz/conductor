@@ -34,7 +34,7 @@
       "provider": "github",
       "owner": "gabelmz",
       "repo": "conductor",
-      "private": true
+      "private": false
     },
     "directories": {
       "output": "../dist"

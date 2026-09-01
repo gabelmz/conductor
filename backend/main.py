@@ -115,7 +115,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "1.9.5",
+        "version": "2.0.0",
         "products": storage.count_products(),
     }
 
@@ -175,7 +175,7 @@ def list_update_versions():
 
     releases.sort(key=lambda x: x["version"], reverse=True)
     return {
-        "current_version": "1.9.5",
+        "current_version": "2.0.0",
         "versions": releases,
     }
 
@@ -192,7 +192,7 @@ def rollback_version(body: dict):
 
     return {
         "ok": True,
-        "current_version": "1.9.5",
+        "current_version": "2.0.0",
         "target_version": target_version,
         "message": f"Successfully set version target to v{target_version}. Restart the application to finalize.",
     }
@@ -905,7 +905,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "1.9.5",
+        "version": "2.0.0",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,

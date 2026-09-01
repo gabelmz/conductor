@@ -352,7 +352,7 @@ function setupAutoUpdater() {
   const token = readUpdateToken();
   try {
     autoUpdater.setFeedURL({
-      provider: 'github', owner: 'gabelmz', repo: 'conductor', private: true,
+      provider: 'github', owner: 'gabelmz', repo: 'conductor', private: false,
       ...(token ? { token } : {}),
     });
   } catch { /* keep electron-builder publish defaults */ }
