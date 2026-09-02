@@ -340,7 +340,12 @@ def _asana_task_upsert(record: dict[str, Any]) -> None:
     payload = {key: value for key, value in record.items() if key in allowed}
     payload["gid"] = gid
     payload["synced_at"] = storage.now_iso()
-    storage._upsert("asana_tasks", payload)
+    # merge_upsert (not _upsert/INSERT OR REPLACE): a Supabase-sourced record can omit
+    # locally-only derived fields such as `weight` (computed by asana_sync.task_weight(),
+    # never returned by Asana's own API) — a blanket REPLACE would silently zero those
+    # columns out on every pull and corrupt KPI weighting. See storage.merge_upsert's
+    # docstring for the full rationale.
+    storage.merge_upsert("asana_tasks", "gid", payload)
 
 
 def local_adapters(entity: str) -> dict[str, LocalAdapter]:
@@ -351,6 +356,34 @@ def local_adapters(entity: str) -> dict[str, LocalAdapter]:
     if entity in {"asana", "asana_tasks"}:
         return {"asana_tasks": LocalAdapter(lambda: storage.list_asana_tasks(limit=100000), _asana_task_upsert, "gid", "modified_at")}
     raise ValueError("dataset must be products or asana")
+
+
+def read_entity(entity_type: str, *, limit: int = 500, session: Any = requests) -> list[dict[str, Any]]:
+    """Read one entity's normalized rows back out of the Supabase mirror.
+
+    This is the server-side read path: Conductor's frontend must read Asana (or any other
+    synced entity) data through the FastAPI backend rather than calling Asana directly with a
+    browser-held token. The backend alone holds the Supabase service-role key (via
+    ``_load_config``/``CONFIG_PATH``) and the Asana PAT (via ``asana_sync``'s own config) —
+    neither ever appears in a response body. ``conductor_records.payload`` already stores each
+    entity's full record (see ``_push_entity``); this just unwraps that JSONB envelope back
+    into plain dicts, newest first by ``source_updated_at``.
+    """
+    if entity_type not in SUPPORTED_ENTITIES:
+        raise ValueError(f"unsupported entity: {entity_type}")
+    response = _request(
+        "GET",
+        "conductor_records",
+        session=session,
+        params={
+            "entity_type": f"eq.{entity_type}",
+            "select": "record_key,payload,source_updated_at,synced_at",
+            "order": "source_updated_at.desc.nullslast,record_key.asc",
+            "limit": min(max(limit, 1), 5000),
+        },
+    )
+    rows = response.json() or []
+    return [row["payload"] for row in rows if isinstance(row, dict) and isinstance(row.get("payload"), dict)]
 
 
 def list_runs(limit: int = 20, *, session: Any = requests) -> list[dict[str, Any]]:
@@ -407,6 +440,20 @@ def api_runs(limit: int = 20) -> list[dict[str, Any]]:
         return list_runs(limit)
     except Exception as exc:
         raise HTTPException(502, f"Supabase run history failed: {type(exc).__name__}") from exc
+
+
+@router.get("/records/{entity}")
+def api_read_records(entity: str, limit: int = 500) -> list[dict[str, Any]]:
+    """Server-side normalized read path — see read_entity() docstring.
+
+    Never returns credentials: the response is exactly the list of stored payload dicts.
+    """
+    try:
+        return read_entity(entity, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, f"Supabase read failed: {type(exc).__name__}") from exc
 
 
 @router.post("/sync/{dataset}/{direction}")

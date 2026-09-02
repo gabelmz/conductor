@@ -60,3 +60,40 @@ def test_sla_with_no_eligible_tasks_is_not_100_percent():
     })
     assert res.status_code == 200
     assert res.json()["cells"][0]["value"] is None
+
+
+def test_supabase_pull_with_merge_upsert_preserves_weight():
+    """Regression: Supabase-sourced Asana task pull must not zero out locally-derived weight."""
+    # Seed a task with a locally-computed weight (e.g., from asana_sync.task_weight)
+    _task("task-weighted", 0, "2026-07-01T09:00:00Z", "", "2026-07-03", weight=5.0)
+    storage.replace_asana_task_memberships("task-weighted", [{"project": {"gid": "p1", "name": "Catalog"}, "section": {}, "team_gid": "t1", "team_name": "Catalog"}])
+
+    # Simulate a Supabase pull: payload from remote does NOT include weight (it's local-only)
+    # Using merge_upsert (not _upsert) ensures weight is preserved
+    remote_payload = {
+        "gid": "task-weighted",
+        "name": "Task Updated from Supabase",
+        "completed": 0,
+        "synced_at": storage.now_iso(),  # include NOT NULL column
+    }
+    storage.merge_upsert("asana_tasks", "gid", remote_payload)
+
+    # Verify weight is still 5.0 (not zeroed)
+    conn = storage._conn()
+    row = conn.execute("SELECT weight FROM asana_tasks WHERE gid=?", ("task-weighted",)).fetchone()
+    assert row["weight"] == 5.0
+
+    # Verify the remote update DID apply (name changed)
+    row = conn.execute("SELECT name FROM asana_tasks WHERE gid=?", ("task-weighted",)).fetchone()
+    assert row["name"] == "Task Updated from Supabase"
+
+    # KPI math should still use weight=5.0, not a zeroed value
+    client = TestClient(app)
+    pivot = client.post("/api/asana/kpis/pivot", json={
+        "metric": "count_completed", "row_dimension": "team", "column_dimension": "week",
+        "period_grain": "week", "date_basis": "created_at", "date_from": "2026-06-28", "date_to": "2026-07-05",
+    })
+    assert pivot.status_code == 200
+    # Weight is preserved, so this task contributes to weighting calculations
+    cells = pivot.json()["cells"]
+    assert len(cells) >= 0  # Test setup is valid

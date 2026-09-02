@@ -735,6 +735,55 @@ def _upsert(table: str, fields: dict, exclude: set[str] | None = None) -> None:
     conn.commit()
 
 
+def merge_upsert(table: str, key_field: str, fields: dict, exclude: set[str] | None = None) -> None:
+    """Merge-upsert a row, preserving any existing column not present in ``fields``.
+
+    ``_upsert`` above is ``INSERT OR REPLACE``, which in SQLite deletes the conflicting row
+    and inserts a new one built ONLY from the supplied columns — every column left out reverts
+    to its schema default, it is not merged. That is correct for callers that always supply
+    every column for a table (e.g. every ``upsert_asana_task`` call from a full Asana task
+    fetch), but it silently destroys data for callers whose payload can be a strict subset of
+    the schema — e.g. a Supabase-sourced Asana task record, which never carries locally-only
+    derived fields such as ``asana_tasks.weight`` (computed by asana_sync.task_weight(), never
+    returned by Asana's own API). Pulling such a record through ``_upsert`` would zero out
+    ``weight`` (and any other locally-only column) on every pull, silently corrupting the KPI
+    weighting that column drives. This function uses ``INSERT ... ON CONFLICT DO UPDATE`` so
+    only the supplied columns are written; every other existing column is left untouched.
+
+    Added for the Supabase pull path (see backend/supabase_sync.py:_asana_task_upsert). Every
+    other existing caller of ``_upsert`` keeps using it unchanged.
+    """
+    cols = []
+    vals = []
+    for k, v in fields.items():
+        if exclude and k in exclude:
+            continue
+        if v is None:
+            v = ""
+        if isinstance(v, (list, dict)):
+            v = json.dumps(v)
+        cols.append(k)
+        vals.append(v)
+    if key_field not in cols:
+        raise ValueError(f"merge_upsert requires {key_field!r} in fields")
+    conn = _conn()
+    placeholders = ",".join("?" * len(cols))
+    update_cols = [c for c in cols if c != key_field]
+    if update_cols:
+        update_clause = ", ".join(f"{c}=excluded.{c}" for c in update_cols)
+        sql = (
+            f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders}) "
+            f"ON CONFLICT({key_field}) DO UPDATE SET {update_clause}"
+        )
+    else:
+        sql = (
+            f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders}) "
+            f"ON CONFLICT({key_field}) DO NOTHING"
+        )
+    conn.execute(sql, vals)
+    conn.commit()
+
+
 def _decode_row(row: sqlite3.Row) -> dict:
     d = dict(row)
     for k in ("tags", "followers", "dependencies", "dependents",

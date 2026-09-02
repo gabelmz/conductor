@@ -232,10 +232,19 @@ def sync_all(mode: str = "all", deep: bool = False,
              progress: Callable[[float, str], None] | None = None) -> dict:
     """Pull everything from Asana into SQLite.
 
-    mode: 'all' (full refresh) | 'delta' (modified_since only).
+    mode: 'all' (full refresh) | 'delta' (last N days via cfg['last_sync']) |
+    'recent' (last 7 days) | 'incremental' (persistent Checkpoint cursor — see below).
     deep: also fetch stories/attachments/subtasks per task. For big orgs
     (e.g. 266k tasks) leave False — task details hydrate on demand when a
     task is opened.
+
+    Incremental cursoring (mode='incremental'): uses sync_runner.Checkpoint (a durable,
+    SQLite-backed cursor keyed by entity — "asana_tasks" here) instead of the ad hoc
+    cfg['last_sync'] field 'delta'/'recent' use, so the cursor survives independently of
+    asana.json and follows the same Checkpoint contract sync_runner.run_sync() uses for the
+    hosted/local-fallback Supabase sync. On the first run (no checkpoint yet) it bootstraps
+    with a full per-project scan, same strategy as mode='all'; afterwards it only asks Asana
+    for tasks changed since the last checkpoint.
     """
     import storage
 
@@ -330,39 +339,70 @@ def sync_all(mode: str = "all", deep: bool = False,
                 )
     counts["custom_fields"] = len(cf_seen)
 
-    # 6) Tasks. 'all' = per-project full scan. 'delta' = workspace search over
-    #    tasks changed since last sync. 'recent' = last 7 days. The windowed
-    #    modes also pull stories/attachments/subtasks (bounded result set).
+    # 6) Tasks. 'all' = per-project full scan. 'delta'/'recent' = workspace search over
+    #    tasks changed since a window. 'incremental' = workspace search since a persistent
+    #    Checkpoint cursor. The windowed/incremental modes also pull stories/attachments/
+    #    subtasks (bounded result set).
     proj_map = {p["gid"]: p for p in projects}
     fetched = 0
+
+    def _scan_all_projects(label_prefix: str, *, deep_scan: bool) -> None:
+        """Full per-project task scan — shared by mode='all' and the incremental
+        bootstrap (first run, no checkpoint yet)."""
+        nonlocal fetched
+        total_projects = max(len(active_projects), 1)
+        report(12, f"{label_prefix} — {len(active_projects)} projects…")
+        for idx, proj in enumerate(active_projects):
+            params: dict = {"project": proj["gid"], "opt_fields": TASK_OPT_FIELDS}
+            for task in paginate(headers, "/tasks", params):
+                _store_task(storage, headers, task, proj_map, deep=deep_scan)
+                fetched += 1
+                counts["tasks"] += 1
+            if (idx + 1) % 25 == 0 or idx == total_projects - 1:
+                report(min(95.0, 12 + (idx + 1) / total_projects * 83),
+                       f"{label_prefix} — {idx + 1}/{len(active_projects)} projects, {fetched} tasks…")
+
     window = None
+    checkpoint = None
+    run_started_at = None
     if mode == "recent":
         window = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     elif mode == "delta" and cfg.get("last_sync"):
         window = cfg["last_sync"]
     elif mode == "delta":
         window = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    elif mode == "incremental":
+        from sync_runner import Checkpoint  # local import: see module docstring for why
+
+        checkpoint = Checkpoint()
+        run_started_at = now_iso()
+        window = checkpoint.get("asana_tasks")  # None on first run -> bootstrap below
+
     if window:
         report(12, f"Fetching tasks changed since {window[:10]} — workspace search…")
-        params_base: dict = {"opt_fields": TASK_OPT_FIELDS, "modified_since": window}
+        # Asana's workspace task-search endpoint (POST /workspaces/{gid}/tasks/search,
+        # issued here as a GET with query params like the rest of this module) filters on
+        # `modified_at.after` (ISO-8601 datetime) — NOT `modified_since`. `modified_since`
+        # is not a field this endpoint accepts; the only sibling of that shape here is
+        # `completed_since`, on the unrelated plain /tasks-for-project listing endpoint.
+        # Confirmed against developers.asana.com/reference/searchtasksforworkspace (2026-09).
+        params_base: dict = {"opt_fields": TASK_OPT_FIELDS, "modified_at.after": window}
         for completed_flag in ("false", "true"):
             params = dict(params_base, completed=completed_flag)
             for task in paginate(headers, f"/workspaces/{ws_gid}/tasks/search", params):
                 _store_task(storage, headers, task, proj_map, deep=True)
                 fetched += 1
                 counts["tasks"] += 1
+        if checkpoint is not None:
+            # Only advance after this batch is fully stored (loop above has completed).
+            checkpoint.advance("asana_tasks", run_started_at)
+    elif mode == "incremental":
+        # No checkpoint yet: bootstrap with a full per-project scan (same as mode='all'),
+        # then start cursoring forward from this run's start time.
+        _scan_all_projects("Bootstrapping incremental sync (no checkpoint yet)", deep_scan=deep)
+        checkpoint.advance("asana_tasks", run_started_at)
     else:
-        total_projects = max(len(active_projects), 1)
-        report(12, f"Fetching tasks — {len(active_projects)} projects…")
-        for idx, proj in enumerate(active_projects):
-            params: dict = {"project": proj["gid"], "opt_fields": TASK_OPT_FIELDS}
-            for task in paginate(headers, "/tasks", params):
-                _store_task(storage, headers, task, proj_map, deep=deep)
-                fetched += 1
-                counts["tasks"] += 1
-            if (idx + 1) % 25 == 0 or idx == total_projects - 1:
-                report(min(95.0, 12 + (idx + 1) / total_projects * 83),
-                       f"Fetching tasks — {idx + 1}/{len(active_projects)} projects, {fetched} tasks…")
+        _scan_all_projects("Fetching tasks", deep_scan=deep)
 
     # 7) Done — record run + bump last_sync (report stored totals)
     final = storage.asana_counts()

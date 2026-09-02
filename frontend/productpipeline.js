@@ -10,7 +10,13 @@
 'use strict';
 
 window.ConductorProductPipeline = (function () {
-  let state = { mode: 'list', pipelineId: null, markets: [], regions: [], requirements: [] };
+  let state = {
+    mode: 'list', pipelineId: null, markets: [], regions: [], requirements: [],
+    section: 'pipelines',
+    registry: {
+      itemId: null, types: [], stages: [], stage: '', source: '', items: [], counts: {},
+    },
+  };
 
   /* ------------------------------------------------------------ helpers */
   function pill(label, cls) {
@@ -32,6 +38,26 @@ window.ConductorProductPipeline = (function () {
 
   function enumChip(v) {
     return `<span class="pp-chip">${esc(v)}</span>`;
+  }
+
+  /* ------------------------------------------------------ section tabs */
+  // Single view (`productpipeline`) hosts two sections: the existing
+  // SP-API Pipelines workflow and the new Product Registry. A dedicated
+  // top-level nav entry would live in frontend/sidebar.js + app.js's view
+  // dispatcher (neither owned here) — flagged in the handoff report as a
+  // follow-up hook rather than edited directly.
+  function sectionTabsHtml() {
+    return `<div class="settings-actions" style="margin-bottom:0.75rem">
+      <button class="${state.section === 'pipelines' ? 'btn-primary' : 'btn-secondary'} btn-sm" id="pr-sec-pipelines"><span class="codicon codicon-git-merge"></span> SP-API Pipelines</button>
+      <button class="${state.section === 'registry' ? 'btn-primary' : 'btn-secondary'} btn-sm" id="pr-sec-registry"><span class="codicon codicon-checklist"></span> Product Registry</button>
+    </div>`;
+  }
+
+  function wireSectionTabs() {
+    const p = $('#pr-sec-pipelines');
+    if (p) p.addEventListener('click', () => { state.section = 'pipelines'; renderList(); });
+    const r = $('#pr-sec-registry');
+    if (r) r.addEventListener('click', () => { state.section = 'registry'; state.registry.itemId = null; renderRegistry(); });
   }
 
   function typeBadge(a) {
@@ -57,6 +83,7 @@ window.ConductorProductPipeline = (function () {
     const hasKey = st ? st.has_key : false;
 
     root.innerHTML = `<div class="view">
+      ${sectionTabsHtml()}
       <div class="view-header"><div>
         <div class="view-title">Product Pipelines</div>
         <div class="view-sub">Turn Amazon's <code>getDefinitionsProductType</code> schema into a staged listing workflow — required attributes, flat-file columns, attribute guidelines, and catalog readiness.</div>
@@ -104,6 +131,8 @@ window.ConductorProductPipeline = (function () {
       <div class="view-sub" style="margin-bottom:0.5rem">Saved product-type workflows. Open one to review attributes, generate flat files &amp; guidelines, and score the catalog.</div>
       <div id="pp-list" class="pp-list"><div class="folder-loading">Loading…</div></div>
     </div>`;
+
+    wireSectionTabs();
 
     $('#pp-save-key').addEventListener('click', async () => {
       const body = {};
@@ -294,9 +323,252 @@ window.ConductorProductPipeline = (function () {
     } catch (e) { toast(e.message, 'err'); wrap.innerHTML = ''; }
   }
 
+  /* ------------------------------------------------------------ Product Registry */
+  const REGISTRY_SOURCES = {
+    connected: ['Connected', 'ASINs already tracked via a live connection (Keepa’s cached product set).'],
+    uploaded: ['Uploaded', 'The most recently uploaded ASIN list.'],
+    recommended: ['Recommended', 'Generated from the newest product-data upload that is completed AND passed validation.'],
+  };
+
+  function registryTypeLabel(t) {
+    return String(t || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  async function loadRegistryMeta() {
+    try {
+      const [typesRes, stagesRes] = await Promise.all([
+        api('/api/productpipeline/registry/types'),
+        api('/api/productpipeline/registry/stages'),
+      ]);
+      state.registry.types = typesRes.types || [];
+      state.registry.stages = stagesRes.stages || [];
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  async function loadRegistryItems() {
+    const params = new URLSearchParams();
+    if (state.registry.stage) params.set('stage', state.registry.stage);
+    const qs = params.toString();
+    const data = await api(`/api/productpipeline/registry/items${qs ? '?' + qs : ''}`);
+    state.registry.items = data.items || [];
+    state.registry.counts = data.counts_by_stage || {};
+    return data;
+  }
+
+  async function resolveAsinSource(source) {
+    state.registry.source = source;
+    $$('.pr-source-btn').forEach((b) => b.classList.toggle('active', b.dataset.source === source));
+    const wrap = $('#pr-resolved');
+    if (!wrap) return;
+    wrap.innerHTML = '<div class="folder-loading">Resolving…</div>';
+    try {
+      const r = await api('/api/productpipeline/registry/asins/resolve', { method: 'POST', body: { source } });
+      wrap.innerHTML = `
+        <div class="pr-counts-row">
+          <span class="pr-count-chip"><b>${r.count}</b> resolved</span>
+          <span class="pr-count-chip ${r.invalid.length ? 'danger' : ''}"><b>${r.invalid.length}</b> invalid</span>
+          <span class="pr-count-chip ${r.duplicates.length ? 'warn' : ''}"><b>${r.duplicates.length}</b> duplicate</span>
+          ${r.stale ? '<span class="pr-count-chip warn"><span class="codicon codicon-warning"></span> stale</span>' : ''}
+        </div>
+        ${r.stale ? `<div class="pp-config-note">${esc(r.stale_reason)}</div>` : ''}
+        ${r.invalid.length ? `<div class="view-sub">Invalid: ${r.invalid.slice(0, 20).map((i) => `<code>${esc(String(i.value))}</code> <span class="muted">(${esc(i.reason)})</span>`).join(', ')}${r.invalid.length > 20 ? '…' : ''}</div>` : ''}
+        ${r.duplicates.length ? `<div class="view-sub">Duplicates: ${r.duplicates.slice(0, 20).map((d) => `<code>${esc(d.value)}</code> ×${d.count}`).join(', ')}${r.duplicates.length > 20 ? '…' : ''}</div>` : ''}
+        <div class="pp-chips" style="margin-top:0.375rem">${r.asins.slice(0, 40).map(enumChip).join('')}${r.asins.length > 40 ? `<span class="muted">+${r.asins.length - 40} more</span>` : ''}</div>`;
+    } catch (e) {
+      wrap.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`;
+    }
+  }
+
+  async function renderRegistry() {
+    const root = $('#view-root');
+    root.innerHTML = `<div class="view">${sectionTabsHtml()}<div class="folder-loading">Loading Product Registry…</div></div>`;
+    if (!state.registry.types.length || !state.registry.stages.length) await loadRegistryMeta();
+    try { await loadRegistryItems(); }
+    catch (e) { toast(e.message, 'err'); }
+
+    const stages = state.registry.stages;
+    const items = state.registry.items;
+    const counts = state.registry.counts;
+    const totalCount = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    root.innerHTML = `<div class="view">
+      ${sectionTabsHtml()}
+      <div class="view-header"><div>
+        <div class="view-title">Product Registry</div>
+        <div class="view-sub">One canonical record per product/upload, moved through seven lifecycle stages: ${stages.map((s) => esc(s.label)).join(' → ')}.</div>
+      </div></div>
+
+      <div class="pr-upload-panel">
+        <div class="keepa-config-head"><span class="codicon codicon-cloud-upload"></span> Upload to the registry</div>
+        <div class="field-row">
+          <label class="field" style="flex:1"><span>File</span><input id="pr-file" type="file" /></label>
+          <label class="field"><span>Registry type</span>
+            <select id="pr-file-type">${state.registry.types.map((t) => `<option value="${esc(t)}">${esc(registryTypeLabel(t))}</option>`).join('')}</select>
+          </label>
+          <label class="field" style="flex:1"><span>Name (optional)</span><input id="pr-name" placeholder="auto: file name" /></label>
+        </div>
+        <div class="settings-actions">
+          <button class="btn-primary" id="pr-upload-btn"><span class="codicon codicon-add"></span> Upload</button>
+          <span class="muted" id="pr-upload-hint" style="margin-left:0.25rem"></span>
+        </div>
+      </div>
+
+      <div class="view-title">ASIN source</div>
+      <div class="view-sub">Pick exactly one source — sources are never mixed, and none is silently pre-selected.</div>
+      <div class="pr-source-row">
+        ${Object.entries(REGISTRY_SOURCES).map(([key, [label, desc]]) => `
+          <button class="pr-source-btn ${state.registry.source === key ? 'active' : ''}" data-source="${key}">${esc(label)}<span class="muted">${esc(desc)}</span></button>`).join('')}
+      </div>
+      ${!state.registry.source ? '<div class="pr-source-none">No source selected yet — resolved ASINs (and their invalid/duplicate/provenance counts) will appear here once you pick one.</div>' : ''}
+      <div id="pr-resolved"></div>
+
+      <div class="view-title" style="margin-top:1.25rem">Registry items</div>
+      <div class="pr-stage-tabs">
+        <span class="pr-stage-tab ${!state.registry.stage ? 'active' : ''}" data-stage="">All<span class="pr-stage-count">${totalCount}</span></span>
+        ${stages.map((s) => `<span class="pr-stage-tab ${state.registry.stage === s.key ? 'active' : ''}" data-stage="${esc(s.key)}">${esc(s.label)}<span class="pr-stage-count">${counts[s.key] || 0}</span></span>`).join('')}
+      </div>
+
+      ${items.length ? `<table class="data-table">
+        <tr><th>Name</th><th>Registry type</th><th>Stage</th><th>Upload status</th><th>Updated</th><th></th></tr>
+        ${items.map((it) => `<tr>
+          <td>${esc(it.name || it.item_key)}</td>
+          <td>${enumChip(registryTypeLabel(it.file_type))}</td>
+          <td><span class="pill-status">${esc(it.stage)}</span></td>
+          <td class="muted">${esc(it.upload_status || '—')}</td>
+          <td class="muted">${fmtAgo(it.updated_at)}</td>
+          <td><button class="btn-secondary btn-sm pr-open" data-id="${it.id}"><span class="codicon codicon-chevron-right"></span> Open</button></td>
+        </tr>`).join('')}
+      </table>` : '<div class="empty-state">No registry items yet — upload a file above to create the first one.</div>'}
+    </div>`;
+
+    wireSectionTabs();
+
+    $('#pr-upload-btn').addEventListener('click', async () => {
+      const fileInput = $('#pr-file');
+      const file = fileInput && fileInput.files && fileInput.files[0];
+      if (!file) return toast('Choose a file to upload', 'warn');
+      const hint = $('#pr-upload-hint');
+      hint.textContent = 'uploading…';
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('file_type', $('#pr-file-type').value);
+      const nm = $('#pr-name').value.trim();
+      if (nm) fd.append('name', nm);
+      try {
+        await api('/api/productpipeline/registry/upload', { method: 'POST', body: fd });
+        toast('Uploaded to the registry', 'ok');
+        renderRegistry();
+      } catch (e) { toast(e.message, 'err'); }
+      finally { hint.textContent = ''; }
+    });
+
+    $$('.pr-source-btn').forEach((b) => b.addEventListener('click', () => resolveAsinSource(b.dataset.source)));
+    $$('.pr-stage-tab').forEach((b) => b.addEventListener('click', () => { state.registry.stage = b.dataset.stage; renderRegistry(); }));
+    $$('.pr-open').forEach((b) => b.addEventListener('click', () => { state.registry.itemId = Number(b.dataset.id); renderRegistryDetail(state.registry.itemId); }));
+  }
+
+  async function renderRegistryDetail(id) {
+    const root = $('#view-root');
+    state.registry.itemId = id;
+    let d;
+    try { d = await api(`/api/productpipeline/registry/items/${id}`); }
+    catch (e) { toast(e.message, 'err'); state.registry.itemId = null; return renderRegistry(); }
+    if (!state.registry.stages.length) await loadRegistryMeta();
+
+    const stageDef = state.registry.stages.find((s) => s.key === d.stage);
+    const allowed = (stageDef && stageDef.transitions) || [];
+    const history = d.transition_history || [];
+
+    root.innerHTML = `<div class="view">
+      <div class="view-header"><div>
+        <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn-secondary btn-sm" id="pr-back"><span class="codicon codicon-arrow-left"></span> Back</button>
+          <div class="view-title">${esc(d.name || d.item_key)}</div>
+          <span class="pill-status">${esc(d.stage)}</span>
+          ${enumChip(registryTypeLabel(d.file_type))}
+        </div>
+        <div class="view-sub">Key: <code>${esc(d.item_key)}</code> · ASIN source: ${esc(d.asin_source || '—')} · Upload status: ${esc(d.upload_status || '—')} · Updated ${fmtAgo(d.updated_at)}</div>
+      </div></div>
+
+      <div class="pr-upload-panel">
+        <div class="keepa-config-head"><span class="codicon codicon-arrow-swap"></span> Move to a new stage</div>
+        ${allowed.length ? `
+          <div class="field-row">
+            <label class="field"><span>Next stage</span><select id="pr-next-stage">${allowed.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join('')}</select></label>
+            <label class="field" style="flex:1"><span>Note (optional)</span><input id="pr-transition-note" placeholder="why is this moving?" /></label>
+          </div>
+          <div class="settings-actions">
+            <button class="btn-primary" id="pr-move-btn"><span class="codicon codicon-arrow-right"></span> Move</button>
+            <span class="muted" id="pr-move-hint" style="margin-left:0.25rem"></span>
+          </div>` : '<div class="pp-config-note">Terminal stage — no further transitions.</div>'}
+      </div>
+
+      <div class="pr-detail-grid">
+        <div class="pr-detail-block"><h4>Raw</h4><pre>${esc(JSON.stringify(d.raw, null, 2))}</pre></div>
+        <div class="pr-detail-block"><h4>Parsed</h4><pre>${esc(JSON.stringify(d.parsed, null, 2))}</pre></div>
+        <div class="pr-detail-block">
+          <h4>Validation</h4>
+          <div class="pr-counts-row">
+            <span class="pr-count-chip ${d.validation.ok ? '' : 'danger'}">${d.validation.ok ? 'valid' : 'invalid'}</span>
+            <span class="pr-count-chip">${d.validation.row_count || 0} rows</span>
+            ${d.validation.invalid_asin_count ? `<span class="pr-count-chip warn">${d.validation.invalid_asin_count} invalid ASIN(s)</span>` : ''}
+          </div>
+          <pre>${esc(JSON.stringify(d.validation, null, 2))}</pre>
+        </div>
+        <div class="pr-detail-block"><h4>Source</h4><pre>${esc(JSON.stringify(d.provenance, null, 2))}</pre></div>
+        <div class="pr-detail-block">
+          <h4>Linked product</h4>
+          ${d.linked_product ? `<pre>${esc(JSON.stringify(d.linked_product, null, 2))}</pre>` : `
+            <div class="field-row"><label class="field"><span>Product ID</span><input id="pr-link-product-id" type="number" /></label></div>
+            <div class="settings-actions"><button class="btn-secondary btn-sm" id="pr-link-btn">Link product</button></div>`}
+        </div>
+        <div class="pr-detail-block">
+          <h4>Transition history</h4>
+          <ul class="pr-transition-list">
+            ${history.length ? history.map((t) => `<li><b>${esc(t.from_stage || '—')} → ${esc(t.to_stage)}</b><div class="muted">${esc(t.note || '')} · ${fmtAgo(t.created_at)}</div></li>`).join('') : '<li class="muted">No transitions yet.</li>'}
+          </ul>
+        </div>
+      </div>
+    </div>`;
+
+    $('#pr-back').addEventListener('click', () => { state.registry.itemId = null; renderRegistry(); });
+
+    if (allowed.length) {
+      $('#pr-move-btn').addEventListener('click', async () => {
+        const hint = $('#pr-move-hint');
+        hint.textContent = 'moving…';
+        try {
+          await api(`/api/productpipeline/registry/items/${id}/transition`, {
+            method: 'POST',
+            body: { to_stage: $('#pr-next-stage').value, note: $('#pr-transition-note').value.trim() },
+          });
+          toast('Stage updated', 'ok');
+          renderRegistryDetail(id);
+        } catch (e) { toast(e.message, 'err'); }
+        finally { hint.textContent = ''; }
+      });
+    }
+
+    const linkBtn = $('#pr-link-btn');
+    if (linkBtn) {
+      linkBtn.addEventListener('click', async () => {
+        const pid = Number($('#pr-link-product-id').value);
+        if (!pid) return toast('Enter a product ID', 'warn');
+        try {
+          await api(`/api/productpipeline/registry/items/${id}/link-product`, { method: 'POST', body: { product_id: pid } });
+          toast('Product linked', 'ok');
+          renderRegistryDetail(id);
+        } catch (e) { toast(e.message, 'err'); }
+      });
+    }
+  }
+
   /* ------------------------------------------------------------ export */
   return {
     render: function () {
+      if (state.section === 'registry') {
+        return state.registry.itemId ? renderRegistryDetail(state.registry.itemId) : renderRegistry();
+      }
       if (state.pipelineId && state.mode !== 'list') return renderDetail(state.pipelineId);
       return renderList();
     },

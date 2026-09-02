@@ -1,0 +1,2109 @@
+[
+  {
+    "name": ".githooks",
+    "path": ".githooks",
+    "type": "directory",
+    "children": [
+      {
+        "name": "pre-push",
+        "path": ".githooks/pre-push",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": ".github",
+    "path": ".github",
+    "type": "directory",
+    "children": [
+      {
+        "name": "workflows",
+        "path": ".github/workflows",
+        "type": "directory",
+        "children": [
+          {
+            "name": "release.yml",
+            "path": ".github/workflows/release.yml",
+            "type": "file"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": ".pytest_cache",
+    "path": ".pytest_cache",
+    "type": "directory",
+    "children": [
+      {
+        "name": "v",
+        "path": ".pytest_cache/v",
+        "type": "directory",
+        "children": [
+          {
+            "name": "cache",
+            "path": ".pytest_cache/v/cache",
+            "type": "directory",
+            "children": [
+              {
+                "name": "lastfailed",
+                "path": ".pytest_cache/v/cache/lastfailed",
+                "type": "file"
+              },
+              {
+                "name": "nodeids",
+                "path": ".pytest_cache/v/cache/nodeids",
+                "type": "file"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": ".gitignore",
+        "path": ".pytest_cache/.gitignore",
+        "type": "file"
+      },
+      {
+        "name": "CACHEDIR.TAG",
+        "path": ".pytest_cache/CACHEDIR.TAG",
+        "type": "file"
+      },
+      {
+        "name": "README.md",
+        "path": ".pytest_cache/README.md",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": ".remember",
+    "path": ".remember",
+    "type": "directory",
+    "children": [
+      {
+        "name": "logs",
+        "path": ".remember/logs",
+        "type": "directory",
+        "children": [
+          {
+            "name": "autonomous",
+            "path": ".remember/logs/autonomous",
+            "type": "directory",
+            "children": [
+              {
+                "name": "save-165837.log",
+                "path": ".remember/logs/autonomous/save-165837.log",
+                "type": "file"
+              },
+              {
+                "name": "save-170053.log",
+                "path": ".remember/logs/autonomous/save-170053.log",
+                "type": "file"
+              },
+              {
+                "name": "save-170310.log",
+                "path": ".remember/logs/autonomous/save-170310.log",
+                "type": "file"
+              },
+              {
+                "name": "save-170531.log",
+                "path": ".remember/logs/autonomous/save-170531.log",
+                "type": "file"
+              },
+              {
+                "name": "save-170739.log",
+                "path": ".remember/logs/autonomous/save-170739.log",
+                "type": "file"
+              },
+              {
+                "name": "save-170952.log",
+                "path": ".remember/logs/autonomous/save-170952.log",
+                "type": "file"
+              },
+              {
+                "name": "save-171233.log",
+                "path": ".remember/logs/autonomous/save-171233.log",
+                "type": "file"
+              },
+              {
+                "name": "save-171458.log",
+                "path": ".remember/logs/autonomous/save-171458.log",
+                "type": "file"
+              },
+              {
+                "name": "save-171717.log",
+                "path": ".remember/logs/autonomous/save-171717.log",
+                "type": "file"
+              },
+              {
+                "name": "save-171936.log",
+                "path": ".remember/logs/autonomous/save-171936.log",
+                "type": "file"
+              },
+              {
+                "name": "save-172200.log",
+                "path": ".remember/logs/autonomous/save-172200.log",
+                "type": "file"
+              },
+              {
+                "name": "save-172421.log",
+                "path": ".remember/logs/autonomous/save-172421.log",
+                "type": "file"
+              },
+              {
+                "name": "save-172634.log",
+                "path": ".remember/logs/autonomous/save-172634.log",
+                "type": "file"
+              },
+              {
+                "name": "save-172845.log",
+                "path": ".remember/logs/autonomous/save-172845.log",
+                "type": "file"
+              },
+              {
+                "name": "save-173100.log",
+                "path": ".remember/logs/autonomous/save-173100.log",
+                "type": "file"
+              },
+              {
+                "name": "save-173309.log",
+                "path": ".remember/logs/autonomous/save-173309.log",
+                "type": "file"
+              },
+              {
+                "name": "save-173526.log",
+                "path": ".remember/logs/autonomous/save-173526.log",
+                "type": "file"
+              },
+              {
+                "name": "save-173739.log",
+                "path": ".remember/logs/autonomous/save-173739.log",
+                "type": "file"
+              },
+              {
+                "name": "save-174000.log",
+                "path": ".remember/logs/autonomous/save-174000.log",
+                "type": "file"
+              },
+              {
+                "name": "save-174622.log",
+                "path": ".remember/logs/autonomous/save-174622.log",
+                "type": "file"
+              },
+              {
+                "name": "save-174848.log",
+                "path": ".remember/logs/autonomous/save-174848.log",
+                "type": "file"
+              },
+              {
+                "name": "save-175254.log",
+                "path": ".remember/logs/autonomous/save-175254.log",
+                "type": "file"
+              },
+              {
+                "name": "save-175548.log",
+                "path": ".remember/logs/autonomous/save-175548.log",
+                "type": "file"
+              }
+            ]
+          },
+          {
+            "name": "hook-errors.log",
+            "path": ".remember/logs/hook-errors.log",
+            "type": "file"
+          },
+          {
+            "name": "memory-2026-09-01.log",
+            "path": ".remember/logs/memory-2026-09-01.log",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "tmp",
+        "path": ".remember/tmp",
+        "type": "directory",
+        "children": [
+          {
+            "name": "capture-alive.d",
+            "path": ".remember/tmp/capture-alive.d",
+            "type": "directory",
+            "children": [
+              {
+                "name": "a48670f8-8710-4313-88d9-e03a3d47dce8",
+                "path": ".remember/tmp/capture-alive.d/a48670f8-8710-4313-88d9-e03a3d47dce8",
+                "type": "file"
+              }
+            ]
+          },
+          {
+            "name": "capture-alive",
+            "path": ".remember/tmp/capture-alive",
+            "type": "file"
+          },
+          {
+            "name": "case-divergence",
+            "path": ".remember/tmp/case-divergence",
+            "type": "file"
+          },
+          {
+            "name": "last-save-ts",
+            "path": ".remember/tmp/last-save-ts",
+            "type": "file"
+          },
+          {
+            "name": "last-save.json",
+            "path": ".remember/tmp/last-save.json",
+            "type": "file"
+          },
+          {
+            "name": "post-tool-ran",
+            "path": ".remember/tmp/post-tool-ran",
+            "type": "file"
+          },
+          {
+            "name": "save-session.pid",
+            "path": ".remember/tmp/save-session.pid",
+            "type": "file"
+          },
+          {
+            "name": "session-slug",
+            "path": ".remember/tmp/session-slug",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": ".gitignore",
+        "path": ".remember/.gitignore",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "backend",
+    "path": "backend",
+    "type": "directory",
+    "children": [
+      {
+        "name": "reporting",
+        "path": "backend/reporting",
+        "type": "directory",
+        "children": [
+          {
+            "name": "__init__.py",
+            "path": "backend/reporting/__init__.py",
+            "type": "file"
+          },
+          {
+            "name": "listing_content.py",
+            "path": "backend/reporting/listing_content.py",
+            "type": "file"
+          },
+          {
+            "name": "team_kpis.py",
+            "path": "backend/reporting/team_kpis.py",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "agents.py",
+        "path": "backend/agents.py",
+        "type": "file"
+      },
+      {
+        "name": "ai_ingest.py",
+        "path": "backend/ai_ingest.py",
+        "type": "file"
+      },
+      {
+        "name": "asana_kpis.py",
+        "path": "backend/asana_kpis.py",
+        "type": "file"
+      },
+      {
+        "name": "asana_mcp_server.cjs",
+        "path": "backend/asana_mcp_server.cjs",
+        "type": "file"
+      },
+      {
+        "name": "asana_mcp_stdio.py",
+        "path": "backend/asana_mcp_stdio.py",
+        "type": "file"
+      },
+      {
+        "name": "asana_rules.py",
+        "path": "backend/asana_rules.py",
+        "type": "file"
+      },
+      {
+        "name": "asana_sync.py",
+        "path": "backend/asana_sync.py",
+        "type": "file"
+      },
+      {
+        "name": "asin_sources.py",
+        "path": "backend/asin_sources.py",
+        "type": "file"
+      },
+      {
+        "name": "attributeaudit.py",
+        "path": "backend/attributeaudit.py",
+        "type": "file"
+      },
+      {
+        "name": "automation.py",
+        "path": "backend/automation.py",
+        "type": "file"
+      },
+      {
+        "name": "bernie.py",
+        "path": "backend/bernie.py",
+        "type": "file"
+      },
+      {
+        "name": "brand_onboarding.py",
+        "path": "backend/brand_onboarding.py",
+        "type": "file"
+      },
+      {
+        "name": "brandcompare.py",
+        "path": "backend/brandcompare.py",
+        "type": "file"
+      },
+      {
+        "name": "bulkimport.py",
+        "path": "backend/bulkimport.py",
+        "type": "file"
+      },
+      {
+        "name": "chat.py",
+        "path": "backend/chat.py",
+        "type": "file"
+      },
+      {
+        "name": "compliance.py",
+        "path": "backend/compliance.py",
+        "type": "file"
+      },
+      {
+        "name": "context_menus.py",
+        "path": "backend/context_menus.py",
+        "type": "file"
+      },
+      {
+        "name": "data.py",
+        "path": "backend/data.py",
+        "type": "file"
+      },
+      {
+        "name": "features.py",
+        "path": "backend/features.py",
+        "type": "file"
+      },
+      {
+        "name": "flatfiles.py",
+        "path": "backend/flatfiles.py",
+        "type": "file"
+      },
+      {
+        "name": "guidelines.py",
+        "path": "backend/guidelines.py",
+        "type": "file"
+      },
+      {
+        "name": "hf.py",
+        "path": "backend/hf.py",
+        "type": "file"
+      },
+      {
+        "name": "hub.py",
+        "path": "backend/hub.py",
+        "type": "file"
+      },
+      {
+        "name": "ingestion.py",
+        "path": "backend/ingestion.py",
+        "type": "file"
+      },
+      {
+        "name": "insights.py",
+        "path": "backend/insights.py",
+        "type": "file"
+      },
+      {
+        "name": "keepa.py",
+        "path": "backend/keepa.py",
+        "type": "file"
+      },
+      {
+        "name": "kpi.py",
+        "path": "backend/kpi.py",
+        "type": "file"
+      },
+      {
+        "name": "listing_compare.py",
+        "path": "backend/listing_compare.py",
+        "type": "file"
+      },
+      {
+        "name": "llama.py",
+        "path": "backend/llama.py",
+        "type": "file"
+      },
+      {
+        "name": "localsources.py",
+        "path": "backend/localsources.py",
+        "type": "file"
+      },
+      {
+        "name": "main.py",
+        "path": "backend/main.py",
+        "type": "file"
+      },
+      {
+        "name": "mcp_servers.py",
+        "path": "backend/mcp_servers.py",
+        "type": "file"
+      },
+      {
+        "name": "parsers.py",
+        "path": "backend/parsers.py",
+        "type": "file"
+      },
+      {
+        "name": "people.py",
+        "path": "backend/people.py",
+        "type": "file"
+      },
+      {
+        "name": "plugins.py",
+        "path": "backend/plugins.py",
+        "type": "file"
+      },
+      {
+        "name": "productpipeline.py",
+        "path": "backend/productpipeline.py",
+        "type": "file"
+      },
+      {
+        "name": "providers.py",
+        "path": "backend/providers.py",
+        "type": "file"
+      },
+      {
+        "name": "reports.py",
+        "path": "backend/reports.py",
+        "type": "file"
+      },
+      {
+        "name": "settings.py",
+        "path": "backend/settings.py",
+        "type": "file"
+      },
+      {
+        "name": "settings_api.py",
+        "path": "backend/settings_api.py",
+        "type": "file"
+      },
+      {
+        "name": "spine.py",
+        "path": "backend/spine.py",
+        "type": "file"
+      },
+      {
+        "name": "storage.py",
+        "path": "backend/storage.py",
+        "type": "file"
+      },
+      {
+        "name": "supabase_sync.py",
+        "path": "backend/supabase_sync.py",
+        "type": "file"
+      },
+      {
+        "name": "svl.py",
+        "path": "backend/svl.py",
+        "type": "file"
+      },
+      {
+        "name": "sync_runner.py",
+        "path": "backend/sync_runner.py",
+        "type": "file"
+      },
+      {
+        "name": "ui.py",
+        "path": "backend/ui.py",
+        "type": "file"
+      },
+      {
+        "name": "usage.py",
+        "path": "backend/usage.py",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "data",
+    "path": "data",
+    "type": "directory",
+    "children": [
+      {
+        "name": "chat-docs",
+        "path": "data/chat-docs",
+        "type": "directory",
+        "children": [
+          {
+            "name": "1aa24d40723a",
+            "path": "data/chat-docs/1aa24d40723a",
+            "type": "directory",
+            "children": [
+              {
+                "name": "meta.json",
+                "path": "data/chat-docs/1aa24d40723a/meta.json",
+                "type": "file"
+              },
+              {
+                "name": "test-ref.txt",
+                "path": "data/chat-docs/1aa24d40723a/test-ref.txt",
+                "type": "file"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "uploads",
+        "path": "data/uploads",
+        "type": "directory",
+        "children": []
+      },
+      {
+        "name": "asana.json",
+        "path": "data/asana.json",
+        "type": "file"
+      },
+      {
+        "name": "backend.log",
+        "path": "data/backend.log",
+        "type": "file"
+      },
+      {
+        "name": "chat.json",
+        "path": "data/chat.json",
+        "type": "file"
+      },
+      {
+        "name": "conductor.db",
+        "path": "data/conductor.db",
+        "type": "file"
+      },
+      {
+        "name": "keepa.json",
+        "path": "data/keepa.json",
+        "type": "file"
+      },
+      {
+        "name": "mcp.json",
+        "path": "data/mcp.json",
+        "type": "file"
+      },
+      {
+        "name": "spapi.json",
+        "path": "data/spapi.json",
+        "type": "file"
+      },
+      {
+        "name": "supabase.json",
+        "path": "data/supabase.json",
+        "type": "file"
+      },
+      {
+        "name": "ui.json",
+        "path": "data/ui.json",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "desktop",
+    "path": "desktop",
+    "type": "directory",
+    "children": [
+      {
+        "name": "assets",
+        "path": "desktop/assets",
+        "type": "directory",
+        "children": [
+          {
+            "name": "icon.ico",
+            "path": "desktop/assets/icon.ico",
+            "type": "file"
+          },
+          {
+            "name": "icon.png",
+            "path": "desktop/assets/icon.png",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "build",
+        "path": "desktop/build",
+        "type": "directory",
+        "children": [
+          {
+            "name": "assets",
+            "path": "desktop/build/assets",
+            "type": "directory",
+            "children": [
+              {
+                "name": "icon.png",
+                "path": "desktop/build/assets/icon.png",
+                "type": "file"
+              }
+            ]
+          },
+          {
+            "name": "main.cjs",
+            "path": "desktop/build/main.cjs",
+            "type": "file"
+          },
+          {
+            "name": "package.json",
+            "path": "desktop/build/package.json",
+            "type": "file"
+          },
+          {
+            "name": "preload.cjs",
+            "path": "desktop/build/preload.cjs",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "gh-token",
+        "path": "desktop/gh-token",
+        "type": "file"
+      },
+      {
+        "name": "main.cjs",
+        "path": "desktop/main.cjs",
+        "type": "file"
+      },
+      {
+        "name": "make-shortcuts.ps1",
+        "path": "desktop/make-shortcuts.ps1",
+        "type": "file"
+      },
+      {
+        "name": "package-lock.json",
+        "path": "desktop/package-lock.json",
+        "type": "file"
+      },
+      {
+        "name": "package.json",
+        "path": "desktop/package.json",
+        "type": "file"
+      },
+      {
+        "name": "parker.asar",
+        "path": "desktop/parker.asar",
+        "type": "file"
+      },
+      {
+        "name": "preload.cjs",
+        "path": "desktop/preload.cjs",
+        "type": "file"
+      },
+      {
+        "name": "ui-smoke-mcp.cjs",
+        "path": "desktop/ui-smoke-mcp.cjs",
+        "type": "file"
+      },
+      {
+        "name": "ui-smoke-sidebar.cjs",
+        "path": "desktop/ui-smoke-sidebar.cjs",
+        "type": "file"
+      },
+      {
+        "name": "ui-smoke-store.cjs",
+        "path": "desktop/ui-smoke-store.cjs",
+        "type": "file"
+      },
+      {
+        "name": "ui-smoke.cjs",
+        "path": "desktop/ui-smoke.cjs",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "dist",
+    "path": "dist",
+    "type": "directory",
+    "children": [
+      {
+        "name": "win-unpacked",
+        "path": "dist/win-unpacked",
+        "type": "directory",
+        "children": [
+          {
+            "name": "locales",
+            "path": "dist/win-unpacked/locales",
+            "type": "directory",
+            "children": [
+              {
+                "name": "af.pak",
+                "path": "dist/win-unpacked/locales/af.pak",
+                "type": "file"
+              },
+              {
+                "name": "am.pak",
+                "path": "dist/win-unpacked/locales/am.pak",
+                "type": "file"
+              },
+              {
+                "name": "ar.pak",
+                "path": "dist/win-unpacked/locales/ar.pak",
+                "type": "file"
+              },
+              {
+                "name": "bg.pak",
+                "path": "dist/win-unpacked/locales/bg.pak",
+                "type": "file"
+              },
+              {
+                "name": "bn.pak",
+                "path": "dist/win-unpacked/locales/bn.pak",
+                "type": "file"
+              },
+              {
+                "name": "ca.pak",
+                "path": "dist/win-unpacked/locales/ca.pak",
+                "type": "file"
+              },
+              {
+                "name": "cs.pak",
+                "path": "dist/win-unpacked/locales/cs.pak",
+                "type": "file"
+              },
+              {
+                "name": "da.pak",
+                "path": "dist/win-unpacked/locales/da.pak",
+                "type": "file"
+              },
+              {
+                "name": "de.pak",
+                "path": "dist/win-unpacked/locales/de.pak",
+                "type": "file"
+              },
+              {
+                "name": "el.pak",
+                "path": "dist/win-unpacked/locales/el.pak",
+                "type": "file"
+              },
+              {
+                "name": "en-GB.pak",
+                "path": "dist/win-unpacked/locales/en-GB.pak",
+                "type": "file"
+              },
+              {
+                "name": "en-US.pak",
+                "path": "dist/win-unpacked/locales/en-US.pak",
+                "type": "file"
+              },
+              {
+                "name": "es-419.pak",
+                "path": "dist/win-unpacked/locales/es-419.pak",
+                "type": "file"
+              },
+              {
+                "name": "es.pak",
+                "path": "dist/win-unpacked/locales/es.pak",
+                "type": "file"
+              },
+              {
+                "name": "et.pak",
+                "path": "dist/win-unpacked/locales/et.pak",
+                "type": "file"
+              },
+              {
+                "name": "fa.pak",
+                "path": "dist/win-unpacked/locales/fa.pak",
+                "type": "file"
+              },
+              {
+                "name": "fi.pak",
+                "path": "dist/win-unpacked/locales/fi.pak",
+                "type": "file"
+              },
+              {
+                "name": "fil.pak",
+                "path": "dist/win-unpacked/locales/fil.pak",
+                "type": "file"
+              },
+              {
+                "name": "fr.pak",
+                "path": "dist/win-unpacked/locales/fr.pak",
+                "type": "file"
+              },
+              {
+                "name": "gu.pak",
+                "path": "dist/win-unpacked/locales/gu.pak",
+                "type": "file"
+              },
+              {
+                "name": "he.pak",
+                "path": "dist/win-unpacked/locales/he.pak",
+                "type": "file"
+              },
+              {
+                "name": "hi.pak",
+                "path": "dist/win-unpacked/locales/hi.pak",
+                "type": "file"
+              },
+              {
+                "name": "hr.pak",
+                "path": "dist/win-unpacked/locales/hr.pak",
+                "type": "file"
+              },
+              {
+                "name": "hu.pak",
+                "path": "dist/win-unpacked/locales/hu.pak",
+                "type": "file"
+              },
+              {
+                "name": "id.pak",
+                "path": "dist/win-unpacked/locales/id.pak",
+                "type": "file"
+              },
+              {
+                "name": "it.pak",
+                "path": "dist/win-unpacked/locales/it.pak",
+                "type": "file"
+              },
+              {
+                "name": "ja.pak",
+                "path": "dist/win-unpacked/locales/ja.pak",
+                "type": "file"
+              },
+              {
+                "name": "kn.pak",
+                "path": "dist/win-unpacked/locales/kn.pak",
+                "type": "file"
+              },
+              {
+                "name": "ko.pak",
+                "path": "dist/win-unpacked/locales/ko.pak",
+                "type": "file"
+              },
+              {
+                "name": "lt.pak",
+                "path": "dist/win-unpacked/locales/lt.pak",
+                "type": "file"
+              },
+              {
+                "name": "lv.pak",
+                "path": "dist/win-unpacked/locales/lv.pak",
+                "type": "file"
+              },
+              {
+                "name": "ml.pak",
+                "path": "dist/win-unpacked/locales/ml.pak",
+                "type": "file"
+              },
+              {
+                "name": "mr.pak",
+                "path": "dist/win-unpacked/locales/mr.pak",
+                "type": "file"
+              },
+              {
+                "name": "ms.pak",
+                "path": "dist/win-unpacked/locales/ms.pak",
+                "type": "file"
+              },
+              {
+                "name": "nb.pak",
+                "path": "dist/win-unpacked/locales/nb.pak",
+                "type": "file"
+              },
+              {
+                "name": "nl.pak",
+                "path": "dist/win-unpacked/locales/nl.pak",
+                "type": "file"
+              },
+              {
+                "name": "pl.pak",
+                "path": "dist/win-unpacked/locales/pl.pak",
+                "type": "file"
+              },
+              {
+                "name": "pt-BR.pak",
+                "path": "dist/win-unpacked/locales/pt-BR.pak",
+                "type": "file"
+              },
+              {
+                "name": "pt-PT.pak",
+                "path": "dist/win-unpacked/locales/pt-PT.pak",
+                "type": "file"
+              },
+              {
+                "name": "ro.pak",
+                "path": "dist/win-unpacked/locales/ro.pak",
+                "type": "file"
+              },
+              {
+                "name": "ru.pak",
+                "path": "dist/win-unpacked/locales/ru.pak",
+                "type": "file"
+              },
+              {
+                "name": "sk.pak",
+                "path": "dist/win-unpacked/locales/sk.pak",
+                "type": "file"
+              },
+              {
+                "name": "sl.pak",
+                "path": "dist/win-unpacked/locales/sl.pak",
+                "type": "file"
+              },
+              {
+                "name": "sr.pak",
+                "path": "dist/win-unpacked/locales/sr.pak",
+                "type": "file"
+              },
+              {
+                "name": "sv.pak",
+                "path": "dist/win-unpacked/locales/sv.pak",
+                "type": "file"
+              },
+              {
+                "name": "sw.pak",
+                "path": "dist/win-unpacked/locales/sw.pak",
+                "type": "file"
+              },
+              {
+                "name": "ta.pak",
+                "path": "dist/win-unpacked/locales/ta.pak",
+                "type": "file"
+              },
+              {
+                "name": "te.pak",
+                "path": "dist/win-unpacked/locales/te.pak",
+                "type": "file"
+              },
+              {
+                "name": "th.pak",
+                "path": "dist/win-unpacked/locales/th.pak",
+                "type": "file"
+              },
+              {
+                "name": "tr.pak",
+                "path": "dist/win-unpacked/locales/tr.pak",
+                "type": "file"
+              },
+              {
+                "name": "uk.pak",
+                "path": "dist/win-unpacked/locales/uk.pak",
+                "type": "file"
+              },
+              {
+                "name": "ur.pak",
+                "path": "dist/win-unpacked/locales/ur.pak",
+                "type": "file"
+              },
+              {
+                "name": "vi.pak",
+                "path": "dist/win-unpacked/locales/vi.pak",
+                "type": "file"
+              },
+              {
+                "name": "zh-CN.pak",
+                "path": "dist/win-unpacked/locales/zh-CN.pak",
+                "type": "file"
+              },
+              {
+                "name": "zh-TW.pak",
+                "path": "dist/win-unpacked/locales/zh-TW.pak",
+                "type": "file"
+              }
+            ]
+          },
+          {
+            "name": "resources",
+            "path": "dist/win-unpacked/resources",
+            "type": "directory",
+            "children": [
+              {
+                "name": "backend",
+                "path": "dist/win-unpacked/resources/backend",
+                "type": "directory",
+                "children": [
+                  {
+                    "name": "reporting",
+                    "path": "dist/win-unpacked/resources/backend/reporting",
+                    "type": "directory",
+                    "children": [
+                      {
+                        "name": "__init__.py",
+                        "path": "dist/win-unpacked/resources/backend/reporting/__init__.py",
+                        "type": "file"
+                      },
+                      {
+                        "name": "listing_content.py",
+                        "path": "dist/win-unpacked/resources/backend/reporting/listing_content.py",
+                        "type": "file"
+                      },
+                      {
+                        "name": "team_kpis.py",
+                        "path": "dist/win-unpacked/resources/backend/reporting/team_kpis.py",
+                        "type": "file"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "agents.py",
+                    "path": "dist/win-unpacked/resources/backend/agents.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "ai_ingest.py",
+                    "path": "dist/win-unpacked/resources/backend/ai_ingest.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "asana_kpis.py",
+                    "path": "dist/win-unpacked/resources/backend/asana_kpis.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "asana_mcp_server.cjs",
+                    "path": "dist/win-unpacked/resources/backend/asana_mcp_server.cjs",
+                    "type": "file"
+                  },
+                  {
+                    "name": "asana_mcp_stdio.py",
+                    "path": "dist/win-unpacked/resources/backend/asana_mcp_stdio.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "asana_rules.py",
+                    "path": "dist/win-unpacked/resources/backend/asana_rules.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "asana_sync.py",
+                    "path": "dist/win-unpacked/resources/backend/asana_sync.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "attributeaudit.py",
+                    "path": "dist/win-unpacked/resources/backend/attributeaudit.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "automation.py",
+                    "path": "dist/win-unpacked/resources/backend/automation.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "bernie.py",
+                    "path": "dist/win-unpacked/resources/backend/bernie.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "brand_onboarding.py",
+                    "path": "dist/win-unpacked/resources/backend/brand_onboarding.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "brandcompare.py",
+                    "path": "dist/win-unpacked/resources/backend/brandcompare.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "bulkimport.py",
+                    "path": "dist/win-unpacked/resources/backend/bulkimport.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "chat.py",
+                    "path": "dist/win-unpacked/resources/backend/chat.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "compliance.py",
+                    "path": "dist/win-unpacked/resources/backend/compliance.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "data.py",
+                    "path": "dist/win-unpacked/resources/backend/data.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "features.py",
+                    "path": "dist/win-unpacked/resources/backend/features.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "flatfiles.py",
+                    "path": "dist/win-unpacked/resources/backend/flatfiles.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "guidelines.py",
+                    "path": "dist/win-unpacked/resources/backend/guidelines.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "hf.py",
+                    "path": "dist/win-unpacked/resources/backend/hf.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "hub.py",
+                    "path": "dist/win-unpacked/resources/backend/hub.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "ingestion.py",
+                    "path": "dist/win-unpacked/resources/backend/ingestion.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "insights.py",
+                    "path": "dist/win-unpacked/resources/backend/insights.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "keepa.py",
+                    "path": "dist/win-unpacked/resources/backend/keepa.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "kpi.py",
+                    "path": "dist/win-unpacked/resources/backend/kpi.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "listing_compare.py",
+                    "path": "dist/win-unpacked/resources/backend/listing_compare.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "llama.py",
+                    "path": "dist/win-unpacked/resources/backend/llama.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "localsources.py",
+                    "path": "dist/win-unpacked/resources/backend/localsources.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "main.py",
+                    "path": "dist/win-unpacked/resources/backend/main.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "mcp_servers.py",
+                    "path": "dist/win-unpacked/resources/backend/mcp_servers.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "parsers.py",
+                    "path": "dist/win-unpacked/resources/backend/parsers.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "people.py",
+                    "path": "dist/win-unpacked/resources/backend/people.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "plugins.py",
+                    "path": "dist/win-unpacked/resources/backend/plugins.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "productpipeline.py",
+                    "path": "dist/win-unpacked/resources/backend/productpipeline.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "providers.py",
+                    "path": "dist/win-unpacked/resources/backend/providers.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "reports.py",
+                    "path": "dist/win-unpacked/resources/backend/reports.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "settings.py",
+                    "path": "dist/win-unpacked/resources/backend/settings.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "settings_api.py",
+                    "path": "dist/win-unpacked/resources/backend/settings_api.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "spine.py",
+                    "path": "dist/win-unpacked/resources/backend/spine.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "storage.py",
+                    "path": "dist/win-unpacked/resources/backend/storage.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "supabase_sync.py",
+                    "path": "dist/win-unpacked/resources/backend/supabase_sync.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "svl.py",
+                    "path": "dist/win-unpacked/resources/backend/svl.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "ui.py",
+                    "path": "dist/win-unpacked/resources/backend/ui.py",
+                    "type": "file"
+                  },
+                  {
+                    "name": "usage.py",
+                    "path": "dist/win-unpacked/resources/backend/usage.py",
+                    "type": "file"
+                  }
+                ]
+              },
+              {
+                "name": "frontend",
+                "path": "dist/win-unpacked/resources/frontend",
+                "type": "directory",
+                "children": [
+                  {
+                    "name": "assets",
+                    "path": "dist/win-unpacked/resources/frontend/assets",
+                    "type": "directory",
+                    "children": [
+                      {
+                        "name": "codicon.css",
+                        "path": "dist/win-unpacked/resources/frontend/assets/codicon.css",
+                        "type": "file"
+                      },
+                      {
+                        "name": "codicon.ttf",
+                        "path": "dist/win-unpacked/resources/frontend/assets/codicon.ttf",
+                        "type": "file"
+                      },
+                      {
+                        "name": "Collapse-Bold.woff2",
+                        "path": "dist/win-unpacked/resources/frontend/assets/Collapse-Bold.woff2",
+                        "type": "file"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "plugins",
+                    "path": "dist/win-unpacked/resources/frontend/plugins",
+                    "type": "directory",
+                    "children": [
+                      {
+                        "name": "core-hub",
+                        "path": "dist/win-unpacked/resources/frontend/plugins/core-hub",
+                        "type": "directory",
+                        "children": [
+                          {
+                            "name": "main.js",
+                            "path": "dist/win-unpacked/resources/frontend/plugins/core-hub/main.js",
+                            "type": "file"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "runtime.js",
+                        "path": "dist/win-unpacked/resources/frontend/plugins/runtime.js",
+                        "type": "file"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "app.js",
+                    "path": "dist/win-unpacked/resources/frontend/app.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "asana-rules.css",
+                    "path": "dist/win-unpacked/resources/frontend/asana-rules.css",
+                    "type": "file"
+                  },
+                  {
+                    "name": "asana-rules.js",
+                    "path": "dist/win-unpacked/resources/frontend/asana-rules.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "attributeaudit.js",
+                    "path": "dist/win-unpacked/resources/frontend/attributeaudit.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "bulkimport.js",
+                    "path": "dist/win-unpacked/resources/frontend/bulkimport.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "datawrangler.js",
+                    "path": "dist/win-unpacked/resources/frontend/datawrangler.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "index.html",
+                    "path": "dist/win-unpacked/resources/frontend/index.html",
+                    "type": "file"
+                  },
+                  {
+                    "name": "insights.js",
+                    "path": "dist/win-unpacked/resources/frontend/insights.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "kpi-studio.js",
+                    "path": "dist/win-unpacked/resources/frontend/kpi-studio.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "localsources.js",
+                    "path": "dist/win-unpacked/resources/frontend/localsources.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "mcp-sync.js",
+                    "path": "dist/win-unpacked/resources/frontend/mcp-sync.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "models.js",
+                    "path": "dist/win-unpacked/resources/frontend/models.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "palette.js",
+                    "path": "dist/win-unpacked/resources/frontend/palette.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "people.js",
+                    "path": "dist/win-unpacked/resources/frontend/people.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "productpipeline.js",
+                    "path": "dist/win-unpacked/resources/frontend/productpipeline.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "sidebar.js",
+                    "path": "dist/win-unpacked/resources/frontend/sidebar.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "split.js",
+                    "path": "dist/win-unpacked/resources/frontend/split.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "store.js",
+                    "path": "dist/win-unpacked/resources/frontend/store.js",
+                    "type": "file"
+                  },
+                  {
+                    "name": "styles.css",
+                    "path": "dist/win-unpacked/resources/frontend/styles.css",
+                    "type": "file"
+                  },
+                  {
+                    "name": "theme.js",
+                    "path": "dist/win-unpacked/resources/frontend/theme.js",
+                    "type": "file"
+                  }
+                ]
+              },
+              {
+                "name": "app-update.yml",
+                "path": "dist/win-unpacked/resources/app-update.yml",
+                "type": "file"
+              },
+              {
+                "name": "app.asar",
+                "path": "dist/win-unpacked/resources/app.asar",
+                "type": "file"
+              },
+              {
+                "name": "elevate.exe",
+                "path": "dist/win-unpacked/resources/elevate.exe",
+                "type": "file"
+              },
+              {
+                "name": "gh-token",
+                "path": "dist/win-unpacked/resources/gh-token",
+                "type": "file"
+              }
+            ]
+          },
+          {
+            "name": "chrome_100_percent.pak",
+            "path": "dist/win-unpacked/chrome_100_percent.pak",
+            "type": "file"
+          },
+          {
+            "name": "chrome_200_percent.pak",
+            "path": "dist/win-unpacked/chrome_200_percent.pak",
+            "type": "file"
+          },
+          {
+            "name": "Conductor.exe",
+            "path": "dist/win-unpacked/Conductor.exe",
+            "type": "file"
+          },
+          {
+            "name": "d3dcompiler_47.dll",
+            "path": "dist/win-unpacked/d3dcompiler_47.dll",
+            "type": "file"
+          },
+          {
+            "name": "dxcompiler.dll",
+            "path": "dist/win-unpacked/dxcompiler.dll",
+            "type": "file"
+          },
+          {
+            "name": "dxil.dll",
+            "path": "dist/win-unpacked/dxil.dll",
+            "type": "file"
+          },
+          {
+            "name": "ffmpeg.dll",
+            "path": "dist/win-unpacked/ffmpeg.dll",
+            "type": "file"
+          },
+          {
+            "name": "icudtl.dat",
+            "path": "dist/win-unpacked/icudtl.dat",
+            "type": "file"
+          },
+          {
+            "name": "libEGL.dll",
+            "path": "dist/win-unpacked/libEGL.dll",
+            "type": "file"
+          },
+          {
+            "name": "libGLESv2.dll",
+            "path": "dist/win-unpacked/libGLESv2.dll",
+            "type": "file"
+          },
+          {
+            "name": "LICENSE.electron.txt",
+            "path": "dist/win-unpacked/LICENSE.electron.txt",
+            "type": "file"
+          },
+          {
+            "name": "LICENSES.chromium.html",
+            "path": "dist/win-unpacked/LICENSES.chromium.html",
+            "type": "file"
+          },
+          {
+            "name": "resources.pak",
+            "path": "dist/win-unpacked/resources.pak",
+            "type": "file"
+          },
+          {
+            "name": "snapshot_blob.bin",
+            "path": "dist/win-unpacked/snapshot_blob.bin",
+            "type": "file"
+          },
+          {
+            "name": "v8_context_snapshot.bin",
+            "path": "dist/win-unpacked/v8_context_snapshot.bin",
+            "type": "file"
+          },
+          {
+            "name": "vk_swiftshader.dll",
+            "path": "dist/win-unpacked/vk_swiftshader.dll",
+            "type": "file"
+          },
+          {
+            "name": "vk_swiftshader_icd.json",
+            "path": "dist/win-unpacked/vk_swiftshader_icd.json",
+            "type": "file"
+          },
+          {
+            "name": "vulkan-1.dll",
+            "path": "dist/win-unpacked/vulkan-1.dll",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "builder-debug.yml",
+        "path": "dist/builder-debug.yml",
+        "type": "file"
+      },
+      {
+        "name": "conductor-2.0.0-x64.nsis.7z",
+        "path": "dist/conductor-2.0.0-x64.nsis.7z",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Portable-1.0.0.exe",
+        "path": "dist/Conductor-Portable-1.0.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Portable-1.0.1.exe",
+        "path": "dist/Conductor-Portable-1.0.1.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Portable-1.1.0.exe",
+        "path": "dist/Conductor-Portable-1.1.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Portable-1.4.0.exe",
+        "path": "dist/Conductor-Portable-1.4.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Portable-1.6.0.exe",
+        "path": "dist/Conductor-Portable-1.6.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Portable-1.9.5.exe",
+        "path": "dist/Conductor-Portable-1.9.5.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Portable-1.9.6.exe",
+        "path": "dist/Conductor-Portable-1.9.6.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Portable-2.0.0.exe",
+        "path": "dist/Conductor-Portable-2.0.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.0.0.exe",
+        "path": "dist/Conductor-Setup-1.0.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.0.0.exe.blockmap",
+        "path": "dist/Conductor-Setup-1.0.0.exe.blockmap",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.0.1.exe",
+        "path": "dist/Conductor-Setup-1.0.1.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.0.1.exe.blockmap",
+        "path": "dist/Conductor-Setup-1.0.1.exe.blockmap",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.1.0.exe",
+        "path": "dist/Conductor-Setup-1.1.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.1.0.exe.blockmap",
+        "path": "dist/Conductor-Setup-1.1.0.exe.blockmap",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.4.0.exe",
+        "path": "dist/Conductor-Setup-1.4.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.4.0.exe.blockmap",
+        "path": "dist/Conductor-Setup-1.4.0.exe.blockmap",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.6.0.exe",
+        "path": "dist/Conductor-Setup-1.6.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.6.0.exe.blockmap",
+        "path": "dist/Conductor-Setup-1.6.0.exe.blockmap",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.9.5.exe",
+        "path": "dist/Conductor-Setup-1.9.5.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.9.5.exe.blockmap",
+        "path": "dist/Conductor-Setup-1.9.5.exe.blockmap",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.9.6.exe",
+        "path": "dist/Conductor-Setup-1.9.6.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-1.9.6.exe.blockmap",
+        "path": "dist/Conductor-Setup-1.9.6.exe.blockmap",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-2.0.0.exe",
+        "path": "dist/Conductor-Setup-2.0.0.exe",
+        "type": "file"
+      },
+      {
+        "name": "Conductor-Setup-2.0.0.exe.blockmap",
+        "path": "dist/Conductor-Setup-2.0.0.exe.blockmap",
+        "type": "file"
+      },
+      {
+        "name": "latest.yml",
+        "path": "dist/latest.yml",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "docs",
+    "path": "docs",
+    "type": "directory",
+    "children": [
+      {
+        "name": "CONDUCTOR-SPINE.md",
+        "path": "docs/CONDUCTOR-SPINE.md",
+        "type": "file"
+      },
+      {
+        "name": "LAW-PARKER-PORT.md",
+        "path": "docs/LAW-PARKER-PORT.md",
+        "type": "file"
+      },
+      {
+        "name": "sync-architecture.md",
+        "path": "docs/sync-architecture.md",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "frontend",
+    "path": "frontend",
+    "type": "directory",
+    "children": [
+      {
+        "name": "assets",
+        "path": "frontend/assets",
+        "type": "directory",
+        "children": [
+          {
+            "name": "codicon.css",
+            "path": "frontend/assets/codicon.css",
+            "type": "file"
+          },
+          {
+            "name": "codicon.ttf",
+            "path": "frontend/assets/codicon.ttf",
+            "type": "file"
+          },
+          {
+            "name": "Collapse-Bold.woff2",
+            "path": "frontend/assets/Collapse-Bold.woff2",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "plugins",
+        "path": "frontend/plugins",
+        "type": "directory",
+        "children": [
+          {
+            "name": "core-hub",
+            "path": "frontend/plugins/core-hub",
+            "type": "directory",
+            "children": [
+              {
+                "name": "main.js",
+                "path": "frontend/plugins/core-hub/main.js",
+                "type": "file"
+              }
+            ]
+          },
+          {
+            "name": "runtime.js",
+            "path": "frontend/plugins/runtime.js",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "app.js",
+        "path": "frontend/app.js",
+        "type": "file"
+      },
+      {
+        "name": "asana-rules.css",
+        "path": "frontend/asana-rules.css",
+        "type": "file"
+      },
+      {
+        "name": "asana-rules.js",
+        "path": "frontend/asana-rules.js",
+        "type": "file"
+      },
+      {
+        "name": "attributeaudit.js",
+        "path": "frontend/attributeaudit.js",
+        "type": "file"
+      },
+      {
+        "name": "bulkimport.js",
+        "path": "frontend/bulkimport.js",
+        "type": "file"
+      },
+      {
+        "name": "commands.js",
+        "path": "frontend/commands.js",
+        "type": "file"
+      },
+      {
+        "name": "context-menu.js",
+        "path": "frontend/context-menu.js",
+        "type": "file"
+      },
+      {
+        "name": "datawrangler.js",
+        "path": "frontend/datawrangler.js",
+        "type": "file"
+      },
+      {
+        "name": "index.html",
+        "path": "frontend/index.html",
+        "type": "file"
+      },
+      {
+        "name": "insights.js",
+        "path": "frontend/insights.js",
+        "type": "file"
+      },
+      {
+        "name": "kpi-studio.js",
+        "path": "frontend/kpi-studio.js",
+        "type": "file"
+      },
+      {
+        "name": "localsources.js",
+        "path": "frontend/localsources.js",
+        "type": "file"
+      },
+      {
+        "name": "mcp-sync.js",
+        "path": "frontend/mcp-sync.js",
+        "type": "file"
+      },
+      {
+        "name": "models.js",
+        "path": "frontend/models.js",
+        "type": "file"
+      },
+      {
+        "name": "palette.js",
+        "path": "frontend/palette.js",
+        "type": "file"
+      },
+      {
+        "name": "people.js",
+        "path": "frontend/people.js",
+        "type": "file"
+      },
+      {
+        "name": "productpipeline.js",
+        "path": "frontend/productpipeline.js",
+        "type": "file"
+      },
+      {
+        "name": "sidebar.js",
+        "path": "frontend/sidebar.js",
+        "type": "file"
+      },
+      {
+        "name": "split.js",
+        "path": "frontend/split.js",
+        "type": "file"
+      },
+      {
+        "name": "store.js",
+        "path": "frontend/store.js",
+        "type": "file"
+      },
+      {
+        "name": "styles.css",
+        "path": "frontend/styles.css",
+        "type": "file"
+      },
+      {
+        "name": "theme.js",
+        "path": "frontend/theme.js",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "models",
+    "path": "models",
+    "type": "directory",
+    "children": [
+      {
+        "name": "hf",
+        "path": "models/hf",
+        "type": "directory",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "scripts",
+    "path": "scripts",
+    "type": "directory",
+    "children": [
+      {
+        "name": "conductor-cli.mjs",
+        "path": "scripts/conductor-cli.mjs",
+        "type": "file"
+      },
+      {
+        "name": "DriveImport.gs",
+        "path": "scripts/DriveImport.gs",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "skills",
+    "path": "skills",
+    "type": "directory",
+    "children": [
+      {
+        "name": "DESKTOP-LLIUIB2-conductor-index-build",
+        "path": "skills/DESKTOP-LLIUIB2-conductor-index-build",
+        "type": "directory",
+        "children": [
+          {
+            "name": "SKILL.md",
+            "path": "skills/DESKTOP-LLIUIB2-conductor-index-build/SKILL.md",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "luxdev-python-index",
+        "path": "skills/luxdev-python-index",
+        "type": "directory",
+        "children": [
+          {
+            "name": "SKILL.md",
+            "path": "skills/luxdev-python-index/SKILL.md",
+            "type": "file"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "supabase",
+    "path": "supabase",
+    "type": "directory",
+    "children": [
+      {
+        "name": "functions",
+        "path": "supabase/functions",
+        "type": "directory",
+        "children": [
+          {
+            "name": "asana-sync",
+            "path": "supabase/functions/asana-sync",
+            "type": "directory",
+            "children": [
+              {
+                "name": "index.ts",
+                "path": "supabase/functions/asana-sync/index.ts",
+                "type": "file"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "migrations",
+        "path": "supabase/migrations",
+        "type": "directory",
+        "children": [
+          {
+            "name": "20260901_0001_asana_sync_spine.sql",
+            "path": "supabase/migrations/20260901_0001_asana_sync_spine.sql",
+            "type": "file"
+          },
+          {
+            "name": "20260901_0002_product_registry_lifecycle.sql",
+            "path": "supabase/migrations/20260901_0002_product_registry_lifecycle.sql",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "name": "conductor-schema.sql",
+        "path": "supabase/conductor-schema.sql",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": "tests",
+    "path": "tests",
+    "type": "directory",
+    "children": [
+      {
+        "name": "test_asana_enhancements.py",
+        "path": "tests/test_asana_enhancements.py",
+        "type": "file"
+      },
+      {
+        "name": "test_asana_kpis.py",
+        "path": "tests/test_asana_kpis.py",
+        "type": "file"
+      },
+      {
+        "name": "test_asana_mcp_stdio.py",
+        "path": "tests/test_asana_mcp_stdio.py",
+        "type": "file"
+      },
+      {
+        "name": "test_context_menus.py",
+        "path": "tests/test_context_menus.py",
+        "type": "file"
+      },
+      {
+        "name": "test_dayone_functionalities.py",
+        "path": "tests/test_dayone_functionalities.py",
+        "type": "file"
+      },
+      {
+        "name": "test_flatfile_upload.py",
+        "path": "tests/test_flatfile_upload.py",
+        "type": "file"
+      },
+      {
+        "name": "test_kpi_wrangler.py",
+        "path": "tests/test_kpi_wrangler.py",
+        "type": "file"
+      },
+      {
+        "name": "test_listing_compare.py",
+        "path": "tests/test_listing_compare.py",
+        "type": "file"
+      },
+      {
+        "name": "test_mcp.py",
+        "path": "tests/test_mcp.py",
+        "type": "file"
+      },
+      {
+        "name": "test_providers.py",
+        "path": "tests/test_providers.py",
+        "type": "file"
+      },
+      {
+        "name": "test_settings_api.py",
+        "path": "tests/test_settings_api.py",
+        "type": "file"
+      },
+      {
+        "name": "test_spine.py",
+        "path": "tests/test_spine.py",
+        "type": "file"
+      },
+      {
+        "name": "test_supabase_sync.py",
+        "path": "tests/test_supabase_sync.py",
+        "type": "file"
+      },
+      {
+        "name": "test_tags.py",
+        "path": "tests/test_tags.py",
+        "type": "file"
+      }
+    ]
+  },
+  {
+    "name": ".eb-frontmatter.yaml",
+    "path": ".eb-frontmatter.yaml",
+    "type": "file"
+  },
+  {
+    "name": ".gitattributes",
+    "path": ".gitattributes",
+    "type": "file"
+  },
+  {
+    "name": ".gitignore",
+    "path": ".gitignore",
+    "type": "file"
+  },
+  {
+    "name": "IDEA.md",
+    "path": "IDEA.md",
+    "type": "file"
+  },
+  {
+    "name": "publish_release.py",
+    "path": "publish_release.py",
+    "type": "file"
+  },
+  {
+    "name": "README.md",
+    "path": "README.md",
+    "type": "file"
+  },
+  {
+    "name": "requirements.txt",
+    "path": "requirements.txt",
+    "type": "file"
+  },
+  {
+    "name": "spine_sync_models_registry.sql",
+    "path": "spine_sync_models_registry.sql",
+    "type": "file"
+  },
+  {
+    "name": "spine_sync_supabase.sql",
+    "path": "spine_sync_supabase.sql",
+    "type": "file"
+  }
+]

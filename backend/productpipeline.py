@@ -30,15 +30,19 @@ Router prefix: /api/productpipeline
 """
 from __future__ import annotations
 
+import csv
 import json
 import os
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
+import asin_sources
 import storage
 
 router = APIRouter(prefix="/api/productpipeline", tags=["productpipeline"])
@@ -71,6 +75,63 @@ REQUIREMENTS = ["LISTING", "LISTING_PRODUCT_ONLY", "LISTING_OFFER_ONLY"]
 
 
 # ---------------------------------------------------------------------------
+# Product Registry — seven-stage lifecycle
+#
+# ONE canonical record per product/upload (product_registry_items). Stage
+# lives as a field on that record (`stage`) plus full history in
+# product_registry_transitions — rows are never duplicated per stage.
+#
+# `file_type` (what KIND of data this is) and `stage` (WHERE the record is
+# in the seven-stage workflow) are kept as SEPARATE fields. Before adding
+# them this way, the existing schema was checked for an already-approved
+# combined model: `product_pipelines` (above, in this same file) already
+# keeps `product_type` and `status` as two separate columns rather than
+# one combined field, and no table anywhere in this codebase (grepped
+# across backend/*.py and supabase/*.sql) combines a content-type and a
+# lifecycle-status into a single column. So there is no existing combined
+# model to preserve — separate fields both match the one precedent that
+# does exist (product_pipelines) and are what was asked for.
+#
+# Shape mirrors backend/spine.py's LIFECYCLES convention (key, label,
+# description, sort_order, terminal, transitions) rather than inventing a
+# second lifecycle-modeling idiom, and mirrors the seven stages seeded
+# into Postgres by supabase/migrations/20260901_0002_product_registry_lifecycle.sql.
+# ---------------------------------------------------------------------------
+REGISTRY_STAGES: list[tuple[str, str, str, int, bool, list[str]]] = [
+    ("suggested", "Suggested", "Recommended candidate — not yet staged for work.", 10, False, ["staging", "archive"]),
+    ("staging", "Staging", "Selected and being assembled/prepared.", 20, False, ["review", "archive"]),
+    ("review", "Review", "Awaiting human review of the prepared data.", 30, False, ["analysis", "staging", "archive"]),
+    ("analysis", "Analysis", "Under compliance/attribute analysis.", 40, False, ["submitted", "staging", "archive"]),
+    ("submitted", "Submitted", "Submitted to the marketplace (SP-API) for publish.", 50, False, ["live", "analysis", "archive"]),
+    ("live", "Live", "Published and active on the marketplace.", 60, False, ["archive"]),
+    ("archive", "Archive", "Retired; historical record only.", 70, True, []),
+]
+REGISTRY_STAGE_KEYS = [s[0] for s in REGISTRY_STAGES]
+REGISTRY_TRANSITIONS = {s[0]: s[5] for s in REGISTRY_STAGES}
+REGISTRY_DEFAULT_STAGE = REGISTRY_STAGE_KEYS[0]  # "suggested"
+
+# Registry types a user chooses at upload time — echoes the dataset keys
+# already seeded by backend/spine.py / spine_sync_supabase.sql
+# (keepa_products, catalog_products, suggested_content) so terminology
+# stays consistent across the app, singularised for a per-record type tag.
+REGISTRY_TYPES = [
+    "asin_list",
+    "catalog_product",
+    "keepa_export",
+    "suggested_content",
+    "compliance_document",
+    "other",
+]
+
+# Registry types whose rows are expected to carry ASIN-shaped values in
+# at least one column — used to decide whether to run ASIN validation
+# during upload, and which registry rows asin_sources.py's "recommended"
+# resolver treats as a product-data upload vs. an ASIN list.
+_ASIN_BEARING_TYPES = {"asin_list", "catalog_product", "keepa_export"}
+_ASIN_COLUMN_CANDIDATES = ("asin", "asins", "sku", "product_id", "value")
+
+
+# ---------------------------------------------------------------------------
 # schema
 # ---------------------------------------------------------------------------
 def init_product_pipeline_db() -> None:
@@ -92,6 +153,43 @@ def init_product_pipeline_db() -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_registry_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_key TEXT NOT NULL,           -- sku/asin, or upload_id when the record is file-only
+            name TEXT DEFAULT '',
+            file_type TEXT NOT NULL,          -- registry type chosen at upload — see REGISTRY_TYPES (kept SEPARATE from `stage`)
+            stage TEXT NOT NULL DEFAULT 'suggested',   -- lifecycle stage — see REGISTRY_STAGES (kept SEPARATE from `file_type`)
+            asin_source TEXT DEFAULT '',      -- connected | uploaded | recommended | manual (see asin_sources.py)
+            upload_id TEXT,
+            upload_status TEXT DEFAULT '',    -- uploading | ready | parsing | done | error (matches storage.py's files.status vocabulary)
+            product_id INTEGER,               -- linked catalog product (storage.products.id), if any
+            raw TEXT DEFAULT '{}',            -- json: raw ingested payload (filename/size/original text, capped)
+            parsed TEXT DEFAULT '{}',         -- json: normalized rows / extracted ASIN rows
+            validation TEXT DEFAULT '{}',     -- json: {"ok": bool, "errors": [...], ...} from the last validation pass
+            provenance TEXT DEFAULT '{}',     -- json: per-ASIN/per-field provenance
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_registry_transitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            from_stage TEXT,
+            to_stage TEXT NOT NULL,
+            note TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_registry_items_stage ON product_registry_items(stage)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_registry_items_file_type ON product_registry_items(file_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_registry_items_key ON product_registry_items(item_key)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_registry_transitions_item ON product_registry_transitions(item_id)")
     conn.commit()
 
 
@@ -651,3 +749,445 @@ def readiness(pid: int):
         "ready_count": len(ready),
         "products": results,
     }
+
+
+# ---------------------------------------------------------------------------
+# Product Registry — upload parsing helpers
+#
+# Minimal CSV/TSV/JSON/NDJSON row parser for registry uploads. Mirrors the
+# header/key handling already used in flatfiles.py's `upload_template`
+# (auto-detect delimiter, normalize header keys) and reuses parsers.py's
+# `normalise_row` idea of trying a short list of candidate column names
+# for the identifying value (there: "sku","asin","asins","product_id",... ;
+# here: the same list, since a registry row's identifying value IS an
+# ASIN/SKU in the vast majority of cases).
+# ---------------------------------------------------------------------------
+def _norm_header_key(s: str) -> str:
+    return str(s or "").strip().lower().replace(" ", "_")
+
+
+def _parse_tabular(raw: bytes, filename: str) -> list[dict]:
+    ext = Path(filename or "").suffix.lower()
+    text = raw.decode("utf-8-sig", errors="replace")
+
+    if ext == ".json":
+        try:
+            obj = json.loads(text)
+        except Exception:
+            return []
+        if isinstance(obj, list):
+            return [r for r in obj if isinstance(r, dict)]
+        if isinstance(obj, dict):
+            return [obj]
+        return []
+
+    if ext in (".ndjson", ".jsonl"):
+        rows = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict):
+                rows.append(obj)
+        return rows
+
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return []
+    if ext in (".tsv", ".tab") or "\t" in lines[0]:
+        delim = "\t"
+    elif "," in lines[0]:
+        delim = ","
+    else:
+        delim = None
+    if delim is None:
+        # A single column with no delimiter is ambiguous: it could be a bare
+        # ASIN list with NO header (every line is a value), or a one-column
+        # file WITH a header (e.g. just "asin\n"). Disambiguate: if the
+        # first line reads like one of the recognized column names AND is
+        # not itself ASIN-shaped, treat it as a header and drop it.
+        first = lines[0].strip().lower()
+        if first in _ASIN_COLUMN_CANDIDATES and not asin_sources.is_valid_asin(lines[0]):
+            return [{"asin": l.strip()} for l in lines[1:]]
+        return [{"value": l.strip()} for l in lines]
+
+    rows_raw = [r for r in csv.reader(lines, delimiter=delim) if any(str(c).strip() for c in r)]
+    if not rows_raw:
+        return []
+    header = [_norm_header_key(c) for c in rows_raw[0]]
+    out = []
+    for r in rows_raw[1:]:
+        out.append({header[i]: (r[i].strip() if i < len(r) else "") for i in range(len(header))})
+    return out
+
+
+def _row_identifier(row: dict) -> str:
+    """Best-effort ASIN/SKU value for one parsed row — tries the same
+    short candidate-column list parsers.py's `normalise_row` already uses
+    for a row's identifying value, plus falls back to a single-column
+    file's only value (e.g. a bare one-ASIN-per-line upload)."""
+    for key in _ASIN_COLUMN_CANDIDATES:
+        v = row.get(key)
+        if v not in (None, ""):
+            return str(v).strip()
+    if len(row) == 1:
+        return str(next(iter(row.values())) or "").strip()
+    return ""
+
+
+def _validate_registry_rows(file_type: str, rows: list[dict], asin_rows: list[dict]) -> dict:
+    """Validation pass run once at upload time. Recorded verbatim in the
+    stored `validation` json and read back by the asin_sources
+    AsinDataAccess implementation below to decide whether an upload
+    qualifies for the 'recommended' ASIN source (must be `status == 'done'`
+    AND `validation.ok`)."""
+    errors: list[str] = []
+    invalid_asins = 0
+    if not rows:
+        errors.append("File is empty or unparseable.")
+    elif file_type in _ASIN_BEARING_TYPES:
+        if not asin_rows:
+            errors.append(
+                f"No identifying column found — expected one of {', '.join(_ASIN_COLUMN_CANDIDATES)}."
+            )
+        else:
+            invalid_asins = sum(1 for r in asin_rows if not asin_sources.is_valid_asin(r["asin"]))
+            if invalid_asins == len(asin_rows):
+                errors.append("No row contained a value matching the ASIN shape.")
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "row_count": len(rows),
+        "asin_row_count": len(asin_rows),
+        "invalid_asin_count": invalid_asins,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Product Registry — ASIN data access (wires asin_sources.AsinDataAccess to
+# local storage). No network/Keepa/Supabase call happens here — "connected"
+# reads Keepa's already-cached product set (keepa.list_keepa_products,
+# a SQLite read), "uploaded"/"recommended" read this file's own
+# product_registry_items rows.
+# ---------------------------------------------------------------------------
+class RegistryAsinAccess:
+    """Concrete asin_sources.AsinDataAccess for the Product Registry.
+    A5 can substitute a fake implementing the same four methods in tests —
+    see asin_sources.AsinDataAccess for the exact contract."""
+
+    def get_connected_asins(self) -> list[dict]:
+        import keepa
+
+        out = []
+        for row in keepa.list_keepa_products(1000):
+            data = row.get("data") or {}
+            asin = data.get("asin") or row.get("asin")
+            if not asin:
+                continue
+            out.append({"asin": asin, "list_name": "connected", "ingested_at": row.get("fetched_at")})
+        return out
+
+    def _asin_list_rows(self) -> list:
+        return storage._conn().execute(
+            "SELECT * FROM product_registry_items WHERE file_type='asin_list' ORDER BY created_at DESC"
+        ).fetchall()
+
+    def get_uploaded_asins(self) -> list[dict]:
+        items = self._asin_list_rows()
+        if not items:
+            return []
+        newest = dict(items[0])
+        parsed = json.loads(newest.get("parsed") or "{}")
+        out = []
+        for r in parsed.get("asin_rows") or []:
+            out.append({
+                "asin": r.get("asin"),
+                "upload_id": newest.get("upload_id"),
+                "list_name": newest.get("name"),
+                "row_number": r.get("row_number"),
+                "ingested_at": r.get("ingested_at"),
+            })
+        return out
+
+    def get_uploads(self) -> list[dict]:
+        rows = storage._conn().execute(
+            "SELECT * FROM product_registry_items WHERE file_type != 'asin_list' ORDER BY created_at DESC"
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            validation = json.loads(d.get("validation") or "{}")
+            out.append({
+                "upload_id": d.get("upload_id"),
+                "filename": d.get("name"),
+                "status": d.get("upload_status"),
+                "validated": bool(validation.get("ok")),
+                "created_at": d.get("created_at"),
+            })
+        return out
+
+    def get_upload_asin_rows(self, upload_id: str) -> list[dict]:
+        row = storage._conn().execute(
+            "SELECT * FROM product_registry_items WHERE upload_id=?", (upload_id,)
+        ).fetchone()
+        if not row:
+            return []
+        parsed = json.loads(dict(row).get("parsed") or "{}")
+        out = []
+        for r in parsed.get("asin_rows") or []:
+            out.append({
+                "asin": r.get("asin"),
+                "upload_id": upload_id,
+                "row_number": r.get("row_number"),
+                "ingested_at": r.get("ingested_at"),
+            })
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Product Registry — storage helpers
+# ---------------------------------------------------------------------------
+def _record_transition(item_id: int, from_stage: str | None, to_stage: str, note: str = "") -> None:
+    conn = storage._conn()
+    conn.execute(
+        "INSERT INTO product_registry_transitions (item_id, from_stage, to_stage, note, created_at) "
+        "VALUES (?,?,?,?,?)",
+        (item_id, from_stage, to_stage, note, storage.now_iso()),
+    )
+    conn.commit()
+
+
+def _get_registry_item_row(item_id: int):
+    row = storage._conn().execute(
+        "SELECT * FROM product_registry_items WHERE id=?", (item_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Registry item not found")
+    return row
+
+
+def _registry_row(row) -> dict:
+    d = dict(row)
+    d["raw"] = json.loads(d.get("raw") or "{}")
+    d["parsed"] = json.loads(d.get("parsed") or "{}")
+    d["validation"] = json.loads(d.get("validation") or "{}")
+    d["provenance"] = json.loads(d.get("provenance") or "{}")
+
+    linked_product = None
+    if d.get("product_id"):
+        prow = storage._conn().execute(
+            "SELECT * FROM products WHERE id=?", (d["product_id"],)
+        ).fetchone()
+        if prow:
+            p = dict(prow)
+            p["attributes"] = json.loads(p.get("attributes") or "{}")
+            p["tags"] = json.loads(p.get("tags") or "[]")
+            linked_product = p
+    d["linked_product"] = linked_product
+
+    history = storage._conn().execute(
+        "SELECT * FROM product_registry_transitions WHERE item_id=? ORDER BY created_at, id",
+        (d["id"],),
+    ).fetchall()
+    d["transition_history"] = [dict(t) for t in history]
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Product Registry — routes
+# ---------------------------------------------------------------------------
+@router.get("/registry/stages")
+def registry_stages():
+    """The seven lifecycle stages + their legal next-stage transitions."""
+    return {
+        "stages": [
+            {"key": key, "label": label, "description": desc, "sort_order": order,
+             "terminal": terminal, "transitions": transitions}
+            for key, label, desc, order, terminal, transitions in REGISTRY_STAGES
+        ]
+    }
+
+
+@router.get("/registry/types")
+def registry_types():
+    """The registry types a user may choose at upload time."""
+    return {"types": REGISTRY_TYPES}
+
+
+@router.post("/registry/upload", status_code=201)
+async def registry_upload(
+    file: UploadFile = File(...),
+    file_type: str = Form(...),
+    name: str = Form(""),
+):
+    """Upload a file, choosing its registry type. Parses it synchronously
+    (mirrors flatfiles.py's upload_template / insights.py's upload — both
+    small-file, single-request patterns, appropriate here since ASIN lists
+    and registry uploads are small relative to bulk catalog imports), runs
+    one validation pass, and creates ONE canonical registry record at the
+    'suggested' stage. `file_type` (registry type) and `stage` (lifecycle)
+    are independent from the start."""
+    file_type = str(file_type or "").strip().lower()
+    if file_type not in REGISTRY_TYPES:
+        raise HTTPException(400, f"file_type must be one of {', '.join(REGISTRY_TYPES)}")
+
+    raw = await file.read()
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(413, "Registry upload too large (max 20MB)")
+
+    filename = file.filename or "upload"
+    rows = _parse_tabular(raw, filename)
+    now = storage.now_iso()
+
+    asin_rows = []
+    for i, row in enumerate(rows, start=1):
+        token = _row_identifier(row)
+        if token:
+            asin_rows.append({"asin": token.upper(), "row_number": i, "ingested_at": now})
+
+    validation = _validate_registry_rows(file_type, rows, asin_rows)
+    upload_status = "done" if rows else "error"
+    upload_id = uuid.uuid4().hex[:12]
+
+    raw_preview = raw.decode("utf-8-sig", errors="replace")
+    truncated = len(raw_preview) > 200_000
+    raw_payload = {
+        "filename": filename,
+        "size_bytes": len(raw),
+        "text": raw_preview[:200_000],
+        "truncated": truncated,
+    }
+    parsed_payload = {"rows": rows, "asin_rows": asin_rows, "row_count": len(rows)}
+
+    conn = storage._conn()
+    cur = conn.execute(
+        "INSERT INTO product_registry_items "
+        "(item_key, name, file_type, stage, asin_source, upload_id, upload_status, product_id, "
+        " raw, parsed, validation, provenance, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            upload_id,
+            (name or Path(filename).stem).strip() or upload_id,
+            file_type,
+            REGISTRY_DEFAULT_STAGE,
+            "manual",
+            upload_id,
+            upload_status,
+            None,
+            json.dumps(raw_payload),
+            json.dumps(parsed_payload),
+            json.dumps(validation),
+            json.dumps({}),
+            now,
+            now,
+        ),
+    )
+    conn.commit()
+    item_id = cur.lastrowid
+    _record_transition(item_id, None, REGISTRY_DEFAULT_STAGE, "created via upload")
+    return _registry_row(_get_registry_item_row(item_id))
+
+
+@router.get("/registry/items")
+def registry_list(stage: str = "", file_type: str = ""):
+    """List registry records, optionally filtered by stage and/or file
+    type. `counts_by_stage` always reflects the WHOLE registry (unfiltered)
+    so the UI can render stage-filter tabs with live counts."""
+    conn = storage._conn()
+    query = "SELECT * FROM product_registry_items WHERE 1=1"
+    params: list = []
+    if stage:
+        if stage not in REGISTRY_STAGE_KEYS:
+            raise HTTPException(400, f"stage must be one of {', '.join(REGISTRY_STAGE_KEYS)}")
+        query += " AND stage=?"
+        params.append(stage)
+    if file_type:
+        if file_type not in REGISTRY_TYPES:
+            raise HTTPException(400, f"file_type must be one of {', '.join(REGISTRY_TYPES)}")
+        query += " AND file_type=?"
+        params.append(file_type)
+    query += " ORDER BY updated_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    items = [_registry_row(r) for r in rows]
+
+    counts_by_stage = {key: 0 for key in REGISTRY_STAGE_KEYS}
+    for r in conn.execute("SELECT stage FROM product_registry_items").fetchall():
+        counts_by_stage[r["stage"]] = counts_by_stage.get(r["stage"], 0) + 1
+
+    return {"count": len(items), "items": items, "counts_by_stage": counts_by_stage}
+
+
+@router.get("/registry/items/{item_id}")
+def registry_detail(item_id: int):
+    """Full authorized view of one registry record: raw / parsed /
+    validation / source / linked-product data, plus its transition
+    history."""
+    return _registry_row(_get_registry_item_row(item_id))
+
+
+@router.post("/registry/items/{item_id}/transition")
+def registry_transition(item_id: int, body: dict):
+    """Move a registry record to a new stage. Enforces the legal-transition
+    graph in REGISTRY_TRANSITIONS (mirrors the seven stage_definitions
+    seeded by the Postgres migration) — illegal transitions are rejected
+    with a clear error naming the stages that ARE legal from here."""
+    row = _get_registry_item_row(item_id)
+    current = row["stage"]
+    to_stage = str(body.get("to_stage") or "").strip().lower()
+    note = str(body.get("note") or "").strip()
+
+    if to_stage not in REGISTRY_TRANSITIONS:
+        raise HTTPException(400, f"Unknown stage {to_stage!r} — must be one of {', '.join(REGISTRY_STAGE_KEYS)}")
+    if to_stage == current:
+        raise HTTPException(409, f"Item {item_id} is already in stage {current!r}.")
+    allowed = REGISTRY_TRANSITIONS.get(current, [])
+    if to_stage not in allowed:
+        raise HTTPException(
+            409,
+            f"Illegal transition {current!r} -> {to_stage!r}. "
+            f"Allowed next stage(s) from {current!r}: {', '.join(allowed) or '(none — terminal stage)'}.",
+        )
+
+    now = storage.now_iso()
+    conn = storage._conn()
+    conn.execute("UPDATE product_registry_items SET stage=?, updated_at=? WHERE id=?", (to_stage, now, item_id))
+    conn.commit()
+    _record_transition(item_id, current, to_stage, note)
+    return _registry_row(_get_registry_item_row(item_id))
+
+
+@router.post("/registry/items/{item_id}/link-product")
+def registry_link_product(item_id: int, body: dict):
+    """Link an existing catalog product (storage.products) to a registry
+    record so its detail view can surface linked-product data."""
+    _get_registry_item_row(item_id)
+    product_id = body.get("product_id")
+    if not product_id:
+        raise HTTPException(400, "product_id is required")
+    prow = storage._conn().execute("SELECT id FROM products WHERE id=?", (product_id,)).fetchone()
+    if not prow:
+        raise HTTPException(404, f"Product {product_id} not found")
+    now = storage.now_iso()
+    conn = storage._conn()
+    conn.execute("UPDATE product_registry_items SET product_id=?, updated_at=? WHERE id=?", (product_id, now, item_id))
+    conn.commit()
+    return _registry_row(_get_registry_item_row(item_id))
+
+
+@router.post("/registry/asins/resolve")
+def registry_resolve_asins(body: dict):
+    """Resolve one of the three explicit ASIN sources (connected / uploaded
+    / recommended) — see asin_sources.py. Never mixes sources and never
+    silently falls back; an unavailable/empty/unqualified source raises a
+    clear error instead."""
+    source = str(body.get("source") or "").strip().lower()
+    try:
+        result = asin_sources.resolve(source, RegistryAsinAccess())
+    except asin_sources.AsinSourceError as exc:
+        status_code = 400 if source not in asin_sources.SOURCES else 409
+        raise HTTPException(status_code, str(exc))
+    return result.to_dict()

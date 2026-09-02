@@ -182,6 +182,7 @@ function renderView(name) {
 function showView(name) {
   state.view = name;
   window.__sidebarActiveView = name;
+  try { localStorage.setItem('conductor.view', name); } catch { /* storage unavailable */ }
   // Split-pane workspace (LAW port): when split mode is active, navigation
   // renders into the right pane instead of taking over the window.
   if (window.ConductorSplit && window.ConductorSplit.isActive() && name !== 'bernie' && name !== 'chat') {
@@ -2238,6 +2239,20 @@ async function boot() {
   warmLoad();
   setInterval(refreshStatusbar, 30000);
   applyGlass(getGlass());
+
+  // Restore whatever view was open before a hard refresh / this fresh load —
+  // without this, `state.view` (app.js:90) always defaults to 'chat' and a
+  // direct navigation/reload while on e.g. Bernie silently drops back to chat.
+  let restoredView = null;
+  try { restoredView = localStorage.getItem('conductor.view'); } catch { /* storage unavailable */ }
+  if (restoredView && restoredView !== 'chat' && VIEW_RENDERERS[restoredView]) {
+    try {
+      showView(restoredView);
+    } catch (err) {
+      console.error(`[boot] failed to restore view "${restoredView}":`, err?.message || err);
+      showView('chat');
+    }
+  }
 }
 
 /* ================================================================
@@ -4149,7 +4164,11 @@ function bernieRenderCanvas() {
   }
   bernieDrawEdges();
   const hint = $('#bn-stage-hint');
-  if (hint) hint.hidden = bernieState.nodes.length > 0;
+  if (hint) {
+    hint.innerHTML = BN_STAGE_HINT_DEFAULT;
+    hint.style.pointerEvents = '';
+    hint.hidden = bernieState.nodes.length > 0;
+  }
   bnRenderMinimap();
 }
 
@@ -4418,20 +4437,91 @@ async function bernieSave() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-async function bernieLoadList() {
+/* Bernie canvas auto-load: persisted "last opened" canvas id, so a fresh
+   direct navigation or a hard refresh restores the same canvas with no
+   click. "Appropriate" canvas (see bernieOpenCanvas below) means, in order:
+   the persisted last-opened id if it still exists, else the most-recently-
+   updated canvas (the list is already ORDER BY updated_at DESC — see
+   backend/bernie.py list_canvases), else a genuine empty state. */
+const BERNIE_LAST_CANVAS_KEY = 'conductor.bernie.lastCanvasId';
+
+function bnGetLastCanvasId() {
+  let raw = null;
+  try { raw = localStorage.getItem(BERNIE_LAST_CANVAS_KEY); } catch { /* storage unavailable */ }
+  const n = Number(raw);
+  return raw && Number.isFinite(n) ? n : null;
+}
+function bnSetLastCanvasId(id) {
   try {
-    bernieState.canvases = await api('/api/bernie/canvases');
-    const sel = $('#bernie-load');
-    if (sel) {
-      sel.innerHTML = '<option value="">— load canvas —</option>' +
-        bernieState.canvases.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.node_count}n · ${c.edge_count}e)</option>`).join('');
-      if (bernieState.canvasId) sel.value = String(bernieState.canvasId);
-    }
-    bnRenderLibrary();
-  } catch { /* */ }
+    if (id) localStorage.setItem(BERNIE_LAST_CANVAS_KEY, String(id));
+    else localStorage.removeItem(BERNIE_LAST_CANVAS_KEY);
+  } catch { /* storage unavailable */ }
 }
 
-async function bnLoadCanvas(id) {
+/* ---- deterministic stage states: loading / empty / error ----
+   bernieRenderCanvas() owns the "content" state (it resets #bn-stage-hint
+   back to BN_STAGE_HINT_DEFAULT whenever real canvas data is rendered).
+   These three cover every moment before that: fetching, no canvases exist
+   yet, or the fetch failed. */
+const BN_STAGE_HINT_DEFAULT = `
+      <span class="codicon codicon-graph" style="font-size:2rem;opacity:.5"></span>
+      <p>Drag nodes from the palette, or click one to add it.<br/>Drag the dot on a node's right edge to connect it to another node.</p>`;
+
+function bnSetStageState(kind, opts = {}) {
+  const hint = $('#bn-stage-hint');
+  if (!hint) return;
+  hint.hidden = false;
+  // .bn-stage-hint is `pointer-events: none` in styles.css (so it doesn't
+  // block canvas drag/drop while idle) — re-enable it for the two states
+  // that need a clickable control; bernieRenderCanvas() clears this back to
+  // the stylesheet default once real content renders.
+  hint.style.pointerEvents = (kind === 'empty' || kind === 'error') ? 'auto' : '';
+  if (kind === 'loading') {
+    hint.innerHTML = `
+      <span class="bn-stage-spinner" style="display:inline-block;width:1.75rem;height:1.75rem;border:3px solid var(--muted-fg,#71717a);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span>
+      <p>Loading canvas…</p>`;
+  } else if (kind === 'empty') {
+    hint.innerHTML = `
+      <span class="codicon codicon-graph" style="font-size:2rem;opacity:.5"></span>
+      <p>No canvases yet.<br/>Create your first one to start building a flow.</p>`;
+    const btn = el('button', 'bn-btn bn-btn-primary', 'New canvas');
+    btn.addEventListener('click', () => $('#bn-new')?.click());
+    hint.appendChild(btn);
+  } else if (kind === 'error') {
+    hint.innerHTML = `
+      <span class="codicon codicon-warning" style="font-size:2rem;opacity:.7"></span>
+      <p>Couldn't load the canvas.<br/><span class="bn-stage-err"></span></p>`;
+    const msg = hint.querySelector('.bn-stage-err');
+    if (msg) msg.textContent = opts.message || 'Unknown error.';
+    const btn = el('button', 'bn-btn', 'Retry');
+    btn.addEventListener('click', () => bernieOpenCanvas());
+    hint.appendChild(btn);
+  }
+}
+
+async function bnFetchCanvasList() {
+  bernieState.canvases = await api('/api/bernie/canvases');
+  const sel = $('#bernie-load');
+  if (sel) {
+    sel.innerHTML = '<option value="">— load canvas —</option>' +
+      bernieState.canvases.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.node_count}n · ${c.edge_count}e)</option>`).join('');
+    if (bernieState.canvasId) sel.value = String(bernieState.canvasId);
+  }
+  bnRenderLibrary();
+}
+
+async function bernieLoadList() {
+  try {
+    await bnFetchCanvasList();
+  } catch (err) {
+    console.error('[bernie] canvas list refresh failed:', err?.message || err);
+  }
+}
+
+async function bnLoadCanvas(id, opts = {}) {
+  const silent = !!opts.silent;
+  const t0 = (window.performance || Date).now();
+  console.info(`[bernie] canvas load: start (id=${id})`);
   try {
     const c = await api(`/api/bernie/canvases/${id}`);
     bernieState.canvasId = c.id;
@@ -4443,10 +4533,55 @@ async function bnLoadCanvas(id) {
     bnSyncSelection();
     const nameInput = $('#bernie-name');
     if (nameInput) nameInput.value = c.name;
+    const sel = $('#bernie-load');
+    if (sel) sel.value = String(c.id);
     bernieRenderCanvas();
     bnZoomFit();
-    toast(`Loaded "${c.name}"`, 'ok');
-  } catch (err) { toast(err.message, 'err'); }
+    bnRenderLibrary();
+    bnSetLastCanvasId(c.id);
+    const ms = Math.round((window.performance || Date).now() - t0);
+    console.info(`[bernie] canvas load: ok (id=${c.id}, nodes=${bernieState.nodes.length}, edges=${bernieState.edges.length}, ${ms}ms)`);
+    if (!silent) toast(`Loaded "${c.name}"`, 'ok');
+    return true;
+  } catch (err) {
+    console.error(`[bernie] canvas load: failed (id=${id}):`, err?.message || err);
+    if (silent) throw err;
+    toast(err.message, 'err');
+    return false;
+  }
+}
+
+/* Orchestrates opening the Canvas page. Called once per genuine "page open"
+   (initial nav to Bernie, or the boot()/showView() restore landing back on
+   it after a hard refresh — see conductor.view). Shows a loading state,
+   fetches the canvas library, then auto-loads the appropriate canvas so real
+   content renders with no click, no manual refresh, no tab switch. */
+async function bernieOpenCanvas() {
+  bnSetStageState('loading');
+  console.info('[bernie] canvas-open: start');
+  try {
+    await bnFetchCanvasList();
+  } catch (err) {
+    console.error('[bernie] canvas-open: list fetch failed:', err?.message || err);
+    bnSetStageState('error', { message: err?.message || 'Could not reach the server.' });
+    return;
+  }
+  if (!bernieState.canvases.length) {
+    bnSetLastCanvasId(null);
+    bnSetStageState('empty');
+    console.info('[bernie] canvas-open: empty (no canvases exist yet)');
+    return;
+  }
+  const lastId = bnGetLastCanvasId();
+  const targetId = (lastId && bernieState.canvases.some((c) => c.id === lastId))
+    ? lastId
+    : bernieState.canvases[0].id; // list is ORDER BY updated_at DESC
+  try {
+    await bnLoadCanvas(targetId, { silent: true });
+    console.info(`[bernie] canvas-open: ok (id=${targetId})`);
+  } catch (err) {
+    bnSetStageState('error', { message: err?.message || `Could not load canvas ${targetId}.` });
+  }
 }
 
 async function bnDuplicateCanvas(c) {
@@ -4901,7 +5036,8 @@ function bnToggleOutputRow() {
 }
 
 /* ------------------------------------------------------------- main render */
-async function renderBernie() {
+async function renderBernie(opts = {}) {
+  const { skipAutoLoad = false } = opts;
   const root = $('#view-root');
   root.innerHTML = `
     <div class="view bernie-view">
@@ -5044,7 +5180,7 @@ async function renderBernie() {
     bernieState.edges = [];
     bernieState.dirty = false;
     bernieView.selected.clear();
-    renderBernie();
+    renderBernie({ skipAutoLoad: true });
   });
   $('#bn-tidy').addEventListener('click', bernieAutoArrange);
   $('#bn-run').addEventListener('click', bernieRunWorkflow);
@@ -5238,8 +5374,12 @@ async function renderBernie() {
   $('#bn-left-float').addEventListener('click', () => bnSetPanelMode('left', bernieView.panels.left === 'flat' ? 'floating' : 'flat'));
   $('#bn-right-float').addEventListener('click', () => bnSetPanelMode('right', bernieView.panels.right === 'flat' ? 'floating' : 'flat'));
 
-  bernieRenderCanvas();
-  await bernieLoadList();
+  if (skipAutoLoad) {
+    bernieRenderCanvas();
+    await bernieLoadList();
+  } else {
+    await bernieOpenCanvas();
+  }
 }
 
 /* ==========================================================================

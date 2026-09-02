@@ -1,0 +1,44 @@
+{
+  "name": "gabelmz",
+  "version": "1.0.0",
+  "description": "gabelmz developer CLI toolkit: Obsidian vault search, OpenRouter free AI chat scaffold, npm publishing wrapper, and fiery dark terminal TUI.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "gabelmz": "./bin/gabelmz.mjs"
+  },
+  "keywords": [
+    "gabelmz",
+    "cli",
+    "obsidian",
+    "vault",
+    "openrouter",
+    "ai",
+    "chat",
+    "npm",
+    "publisher",
+    "tui",
+    "terminal"
+  ],
+  "author": "Gabe Maher",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gabelmz/conductor.git"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/gabelmz.mjs",
+    "check": "node bin/gabelmz.mjs npm check",
+    "dry-run": "npm publish --dry-run",
+    "test": "node bin/gabelmz.mjs skull"
+  }
+}
