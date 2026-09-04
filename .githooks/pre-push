@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Permanent pre-push guard for the conductor repo (wired via core.hooksPath).
 #
 # Rules:
@@ -7,27 +7,26 @@
 #      Violators are blocked with a hint to push to staging instead.
 #   2. A release push (main + v* tag) MUST have a CHANGELOG.md at HEAD that
 #      mentions the released version. Changelogs are authored by SILENT
-#      SUBAGENTS ONLY (delegate_task) — never hand-written in chat.
+#      SUBAGENTS ONLY (delegate_task) - never hand-written in chat.
 # Every other branch (staging, features) pushes normally.
+#
+# POSIX sh on purpose: GUI git clients (VS Code, the Claude desktop app) run
+# hooks with a PATH that has no `bash`, so a `#!/usr/bin/env bash` shebang
+# dies with "/usr/bin/env: 'bash': No such file or directory" and blocks every
+# push. Keep this script free of bash-isms (arrays, declare, [[ ]]).
 
 set -u
-
-declare -a lines
-while IFS= read -r line; do lines+=("$line"); done
-[ ${#lines[@]} -eq 0 ] && exit 0
 
 pushing_main=0
 tag_in_push=0
 tag_ver=""
 main_sha=""
 
-for line in "${lines[@]}"; do
-  local_ref=$(echo "$line" | awk '{print $1}')
-  local_sha=$(echo "$line" | awk '{print $2}')
-  remote_ref=$(echo "$line" | awk '{print $3}')
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "${local_ref:-}" ] && continue
   case "$local_ref" in
     refs/heads/main) pushing_main=1; main_sha="$local_sha" ;;
-    refs/tags/v*)    tag_in_push=1; tag_ver="${local_ref#refs/tags/v}" ;;
+    refs/tags/v*)    tag_in_push=1; tag_ver=${local_ref#refs/tags/v} ;;
   esac
 done
 
@@ -41,8 +40,8 @@ elif git describe --tags --exact-match "$main_sha" >/dev/null 2>&1 \
   ver=$(git describe --tags --exact-match "$main_sha" | sed 's/^v//')
 else
   echo ""
-  echo "⛔ main is release-only: this push has no v* release tag (and HEAD is not tagged)."
-  echo "   Defaulting to staging — push your branch there instead:"
+  echo "main is release-only: this push carries no v* release tag (and HEAD is not tagged)."
+  echo "   Push your branch to staging instead:"
   echo "      git push origin HEAD:staging"
   echo ""
   exit 1
@@ -51,12 +50,10 @@ fi
 # --- release push: changelog must exist and mention the version ---
 if ! git show "HEAD:CHANGELOG.md" 2>/dev/null | grep -qE "(^|[^0-9])${ver}([^0-9]|$)"; then
   echo ""
-  echo "⛔ release v${ver} has no CHANGELOG.md entry at HEAD."
-  echo "   Changelogs are written by SILENT SUBAGENTS ONLY — dispatch one:"
-  echo "      delegate_task → 'write CHANGELOG.md entry for v${ver} from git log v<prev>..HEAD'"
+  echo "release v${ver} has no CHANGELOG.md entry at HEAD."
+  echo "   Changelogs are written by SILENT SUBAGENTS ONLY - dispatch one:"
+  echo "      delegate_task -> 'write CHANGELOG.md entry for v${ver} from git log v<prev>..HEAD'"
   echo "   Then commit CHANGELOG.md and retry the push."
   echo ""
   exit 1
 fi
-
-exit 0

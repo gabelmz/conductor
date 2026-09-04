@@ -32,9 +32,17 @@ def test_hosted_providers_presets_count():
         "lmstudio",
         "moonshot",
         "01ai",
+        "nvidia",
     }
     for req in required:
         assert req in preset_ids, f"Missing expected provider preset: {req}"
+
+
+def test_nvidia_provider_preset():
+    nvidia = providers.HOSTED_PROVIDERS["nvidia"]
+    assert nvidia["base_url"] == "https://integrate.api.nvidia.com/v1"
+    assert nvidia["kind"] == "openai-compatible"
+    assert nvidia["default_model"] == "nvidia/nemotron-3-ultra-550b-a55b"
 
 
 def test_list_providers_endpoint():

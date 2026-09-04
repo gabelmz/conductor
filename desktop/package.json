@@ -1,7 +1,7 @@
 {
   "name": "conductor",
   "productName": "Conductor",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Conductor — business process automation hub with AI workflows (desktop)",
   "main": "main.cjs",
@@ -94,7 +94,7 @@
     ],
     "win": {
       "target": [
-        "nsis",
+        { "target": "nsis", "arch": ["x64", "arm64"] },
         "portable"
       ],
       "icon": "assets/icon.ico"

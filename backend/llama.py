@@ -99,6 +99,43 @@ def resolve_model(name: str) -> Path:
 
 
 # --------------------------------------------------------------------------
+# lazy default-model provisioning — never bundled in the installer, never
+# downloaded eagerly at app startup; only fetched the first time something
+# actually needs a local model and none is configured yet (chat.py's llama
+# routing calls this). Reuses hf.py's existing download pipeline (progress
+# visible at GET /api/hf/downloads) instead of a second download mechanism.
+# --------------------------------------------------------------------------
+DEFAULT_MODEL_REPO = "bartowski/dolphin-2.9-llama3-8b-GGUF"
+DEFAULT_MODEL_FILE = "dolphin-2.9-llama3-8b-Q4_K_M.gguf"
+
+
+def ensure_default_model() -> dict:
+    """Kick off (or report progress on) the one-time default-model download.
+
+    Returns {"status": "ready", "path": ..., "model": ...} once the GGUF is
+    on disk, or {"status": "downloading", "progress": <0-100>} while it's
+    still in flight. Never blocks — callers should tell the user to retry
+    shortly rather than wait on this.
+    """
+    import hf
+
+    path = hf._download_target(DEFAULT_MODEL_REPO, DEFAULT_MODEL_FILE)
+    if path.exists():
+        return {"status": "ready", "path": str(path), "model": path.name}
+
+    for d in hf._downloads.values():
+        if (d.get("repo_id") == DEFAULT_MODEL_REPO and d.get("filename") == DEFAULT_MODEL_FILE
+                and d.get("status") == "downloading"):
+            return {"status": "downloading", "progress": d.get("progress", 0)}
+
+    try:
+        hf.download({"repo_id": DEFAULT_MODEL_REPO, "filename": DEFAULT_MODEL_FILE})
+    except HTTPException:
+        pass  # already queued or landed between the checks above and here
+    return {"status": "downloading", "progress": 0}
+
+
+# --------------------------------------------------------------------------
 # server lifecycle
 # --------------------------------------------------------------------------
 def _spawn_server(model_path: Path, port: int, ctx: int, threads: int) -> subprocess.Popen:

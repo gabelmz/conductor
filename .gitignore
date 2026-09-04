@@ -20,3 +20,12 @@ desktop/gh-token
 # Packaging output
 dist/
 dist-v*-publish/
+
+# Local AI-coding-tool caches/config — not part of the app
+.claude/
+.opencode/
+.swarm/
+.eb/
+
+# Stray debug/scratch dumps
+local-tree.md

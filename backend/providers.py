@@ -203,6 +203,17 @@ HOSTED_PROVIDERS: dict[str, dict] = {
         "default_embedding_model": "",
         "kind": "openai-compatible",
     },
+    "nvidia": {
+        "label": "NVIDIA NIM",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "env_key": "NVIDIA_API_KEY",
+        # Highest-parameter model on the free NIM catalog (confirmed live against
+        # GET /v1/models with the account's own key, 2026-09-03): 550B total / 55B
+        # active hybrid Mamba-Transformer MoE.
+        "default_model": "nvidia/nemotron-3-ultra-550b-a55b",
+        "default_embedding_model": "nvidia/embed-qa-4",
+        "kind": "openai-compatible",
+    },
 }
 
 

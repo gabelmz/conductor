@@ -1669,7 +1669,12 @@ body.sidebar-tucked #side-tab { display: flex; }
    ========================================================================== */
 
 /* ---- full-window takeover (sidebar & other panes hidden) ---- */
-body.bernie-fullscreen .app-body > :not(.view-root) { display: none; }
+/* #view-root is nested inside main.thread (index.html:146-150), NOT a direct child of
+   .app-body — so excluding .view-root here hid view-root's own ancestor and collapsed
+   the whole canvas to 0x0. Spare .thread instead; #thread-scroll/#composer-shell are
+   already hidden by showView(). */
+body.bernie-fullscreen .app-body > :not(.thread) { display: none; }
+body.bernie-fullscreen #split-divider { display: none; }
 body.bernie-fullscreen .side-tab { display: none; }
 body.bernie-fullscreen .view-root { flex: 1; overflow: hidden; padding: 0; }
 

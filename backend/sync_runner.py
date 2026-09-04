@@ -154,24 +154,36 @@ class SyncLease:
         self._ttl_s: float = 0.0
 
     def acquire(self, owner: str, ttl_s: float) -> bool:
+        """Atomically take the lease. Returns False if another owner holds it un-expired.
+
+        This MUST be a single conditional statement, not SELECT-then-write. An earlier
+        version read the row, decided, then issued an unconditional INSERT OR REPLACE —
+        two processes could both pass the check and both write, so the lease guaranteed
+        nothing and hosted+local runners could double-write the same records. SQLite
+        applies INSERT .. ON CONFLICT DO UPDATE .. WHERE atomically, so the predicate is
+        evaluated and the row written under one lock. `rowcount` is 0 when the WHERE
+        rejected the takeover, i.e. someone else still holds a live lease.
+
+        Timestamps compare lexically because _default_clock() always yields UTC
+        datetime.isoformat() (fixed '+00:00' offset, zero-padded) — same format, so
+        string ordering matches chronological ordering.
+        """
         conn = storage._conn()
         now = self._now()
-        row = conn.execute(
-            "SELECT owner, expires_at FROM sync_leases WHERE name=?", (self.name,)
-        ).fetchone()
-        if row is not None:
-            existing_owner = row["owner"]
-            expires_at = _parse_iso(row["expires_at"])
-            still_live = expires_at is not None and expires_at > now
-            if still_live and existing_owner != owner:
-                return False  # held by someone else, not expired -> not stealable
         expires = now + timedelta(seconds=ttl_s)
-        conn.execute(
-            "INSERT OR REPLACE INTO sync_leases (name, owner, acquired_at, expires_at, heartbeat_at) "
-            "VALUES (?,?,?,?,?)",
+        cur = conn.execute(
+            "INSERT INTO sync_leases (name, owner, acquired_at, expires_at, heartbeat_at) "
+            "VALUES (?,?,?,?,?) "
+            "ON CONFLICT(name) DO UPDATE SET "
+            "    owner=excluded.owner, acquired_at=excluded.acquired_at, "
+            "    expires_at=excluded.expires_at, heartbeat_at=excluded.heartbeat_at "
+            "WHERE sync_leases.expires_at <= excluded.acquired_at "
+            "   OR sync_leases.owner = excluded.owner",
             (self.name, owner, now.isoformat(), expires.isoformat(), now.isoformat()),
         )
         conn.commit()
+        if cur.rowcount <= 0:
+            return False  # held by another owner, not yet expired -> not stealable
         self._held = True
         self._owner = owner
         self._ttl_s = ttl_s

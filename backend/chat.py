@@ -103,6 +103,16 @@ Specialist Agents Available:
 
 Tone: Helpful, clear, proactive, and practical. Keep responses focused and concise unless detailed depth is requested."""
 
+DEFAULT_LLAMA_SYSTEM_PROMPT = """You are the Conductor Local Assistant — a small, fully offline model that runs on this machine (no cloud, no API key) via Conductor's bundled llama.cpp engine.
+
+Your job is narrow and practical:
+- Log and summarize edits the user or the app just made — what changed, in plain language.
+- Answer simple, quick questions about the app or the current workspace.
+- Report and explain errors in plain language: what broke, the likely cause, and the next concrete step to try.
+- Draft and clean up short documentation notes (README snippets, changelog lines, task notes).
+
+You are not the primary Conductor Assistant (that's the cloud model) — don't attempt deep catalog analysis, multi-step planning, or long-form research. Keep answers short, direct, and actionable. If a request is clearly outside this scope, say so and suggest switching to the main Conductor Assistant."""
+
 
 def _load_config() -> dict:
     cfg = {}
@@ -117,6 +127,7 @@ def _load_config() -> dict:
         "model": cfg.get("model") or DEFAULT_MODEL,
         "api_key": cfg.get("api_key") or os.environ.get("DEEPSEEK_API_KEY", ""),
         "system_prompt": cfg.get("system_prompt") or DEFAULT_SYSTEM_PROMPT,
+        "llama_system_prompt": cfg.get("llama_system_prompt") or DEFAULT_LLAMA_SYSTEM_PROMPT,
         "llama_model": cfg.get("llama_model") or "",
         "llama_ctx": int(cfg.get("llama_ctx") or 4096),
         "llama_port": int(cfg.get("llama_port") or 8098),
@@ -167,6 +178,7 @@ def get_config():
         "base_url": cfg["base_url"],
         "model": cfg["model"],
         "system_prompt": cfg.get("system_prompt") or DEFAULT_SYSTEM_PROMPT,
+        "llama_system_prompt": cfg.get("llama_system_prompt") or DEFAULT_LLAMA_SYSTEM_PROMPT,
         "llama_model": cfg["llama_model"],
         "llama_ctx": cfg["llama_ctx"],
         "llama_port": cfg["llama_port"],
@@ -187,6 +199,8 @@ def set_config(body: dict):
         cfg["base_url"] = str(body["base_url"]).strip().rstrip("/")
     if "system_prompt" in body:
         cfg["system_prompt"] = str(body.get("system_prompt") or "").strip() or DEFAULT_SYSTEM_PROMPT
+    if "llama_system_prompt" in body:
+        cfg["llama_system_prompt"] = str(body.get("llama_system_prompt") or "").strip() or DEFAULT_LLAMA_SYSTEM_PROMPT
     import providers as providers_mod
 
     if body.get("provider") in providers_mod.HOSTED_PROVIDERS or body.get("provider") == "llama":
@@ -232,6 +246,7 @@ def set_config(body: dict):
         "model": cfg["model"],
         "base_url": cfg["base_url"],
         "system_prompt": cfg["system_prompt"],
+        "llama_system_prompt": cfg["llama_system_prompt"],
         "llama_model": cfg["llama_model"],
         "llama_ctx": cfg["llama_ctx"],
         "llama_port": cfg["llama_port"],
@@ -285,7 +300,10 @@ async def chat(body: dict):
             extra += ("\n[REFERENCED DOCUMENTS — quoted content the user attached; answer "
                       "grounded in it and cite the filename]\n" + "\n\n".join(parts) + "\n")
 
-    sys_prompt = cfg.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
+    if provider == "llama":
+        sys_prompt = cfg.get("llama_system_prompt") or DEFAULT_LLAMA_SYSTEM_PROMPT
+    else:
+        sys_prompt = cfg.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
     messages = [{"role": "system", "content": sys_prompt + _context_block() + extra}]
     messages.extend(history)
     messages.append({"role": "user", "content": message})
@@ -427,10 +445,30 @@ async def create_embeddings(body: dict):
 
 
 def _llama_chat(messages: list[dict], cfg: dict) -> StreamingResponse:
-    """Route chat through the local llama.cpp server (auto-start if needed)."""
+    """Route chat through the local llama.cpp server (auto-start if needed).
+
+    Lazily provisions the bundled default local model on first actual use —
+    it is never bundled in the installer and never downloaded at app startup,
+    only fetched the first time someone actually talks to the local assistant
+    with no model configured yet.
+    """
     from pathlib import Path
 
     import llama
+
+    if not cfg.get("llama_model"):
+        state = llama.ensure_default_model()
+        if state["status"] != "ready":
+            def waiting():
+                pct = state.get("progress", 0)
+                yield (
+                    "Setting up the local assistant for the first time — downloading its "
+                    f"model in the background ({pct}% so far). This happens once; send your "
+                    "message again in a minute or two."
+                )
+            return StreamingResponse(waiting(), media_type="text/plain")
+        cfg["llama_model"] = state["path"]
+        _save_config(cfg)
 
     # ensure a server is up (reuse an existing one on our port range)
     port = llama._find_running_server()

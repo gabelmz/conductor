@@ -521,3 +521,39 @@ def test_asana_tasks_adapter_bootstraps_checkpoint_on_first_run():
     assert callable(adapter.fetch_since)
     assert callable(adapter.key_of)
     assert callable(adapter.apply)
+
+
+def test_lease_is_atomic_under_real_thread_contention():
+    """Many threads race acquire() at once: EXACTLY one may win.
+
+    Regression guard. acquire() was once SELECT -> decide -> unconditional
+    INSERT OR REPLACE; two callers could both pass the check and both write, so the
+    lease guaranteed nothing and the hosted + local runners could double-write the
+    same records. The sequential test above cannot catch that — it passes even with a
+    completely broken lease — so this one uses real threads released simultaneously
+    by a Barrier. storage._conn() is per-thread, so each thread gets its own SQLite
+    connection, which is what makes this genuine contention rather than reentrancy.
+    """
+    thread_count = 24
+    barrier = threading.Barrier(thread_count)
+    winners: list[str] = []
+    guard = threading.Lock()
+
+    def race(i: int) -> None:
+        barrier.wait()  # release all threads into acquire() together
+        if sync_runner.SyncLease("contended").acquire(f"owner-{i}", ttl_s=60.0):
+            with guard:
+                winners.append(f"owner-{i}")
+
+    threads = [threading.Thread(target=race, args=(i,)) for i in range(thread_count)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(winners) == 1, f"lease is not atomic: {len(winners)} winners -> {winners}"
+
+    row = storage._conn().execute(
+        "SELECT owner FROM sync_leases WHERE name='contended'"
+    ).fetchone()
+    assert row["owner"] == winners[0], "stored lease owner disagrees with the winner"
