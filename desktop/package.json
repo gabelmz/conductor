@@ -34,7 +34,8 @@
       "provider": "github",
       "owner": "gabelmz",
       "repo": "conductor",
-      "private": false
+      "private": false,
+      "releaseType": "release"
     },
     "directories": {
       "output": "../dist"
@@ -107,7 +108,7 @@
       "shortcutName": "Conductor",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "artifactName": "Conductor-Setup-${version}.${ext}"
+      "artifactName": "Conductor-Setup-${version}-${arch}.${ext}"
     },
     "portable": {
       "artifactName": "Conductor-Portable-${version}.${ext}"
