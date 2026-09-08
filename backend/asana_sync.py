@@ -259,150 +259,155 @@ def sync_all(mode: str = "all", deep: bool = False,
         if progress:
             progress(pct, msg)
 
-    # 1) Workspaces
-    report(1, "Fetching workspaces…")
-    workspaces = paginate(headers, "/workspaces")
-    for w in workspaces:
-        storage.upsert_asana_workspace(gid=w["gid"], name=w.get("name", ""))
-    counts["workspaces"] = len(workspaces)
-    ws_gid = cfg.get("workspace_gid") or (workspaces[0]["gid"] if workspaces else "")
-    if not ws_gid:
-        raise RuntimeError("No Asana workspace found — set workspace_gid in Settings → Asana.")
+    # Batches local SQLite commits every 500 upserted rows instead of one commit per row —
+    # see storage.batch_writes for why (a 266k-task workspace is 266k fsync'd commits
+    # otherwise). Rows are still paginated from Asana and written to the DB one at a time as
+    # they arrive; only the commit cadence changes.
+    with storage.batch_writes(500):
+        # 1) Workspaces
+        report(1, "Fetching workspaces…")
+        workspaces = paginate(headers, "/workspaces")
+        for w in workspaces:
+            storage.upsert_asana_workspace(gid=w["gid"], name=w.get("name", ""))
+        counts["workspaces"] = len(workspaces)
+        ws_gid = cfg.get("workspace_gid") or (workspaces[0]["gid"] if workspaces else "")
+        if not ws_gid:
+            raise RuntimeError("No Asana workspace found — set workspace_gid in Settings → Asana.")
 
-    # 2) Users
-    report(4, "Fetching users…")
-    users = paginate(headers, f"/workspaces/{ws_gid}/users", {"opt_fields": "name,email"})
-    for u in users:
-        storage.upsert_asana_user(gid=u["gid"], name=u.get("name", ""), email=u.get("email", ""))
-    counts["users"] = len(users)
+        # 2) Users
+        report(4, "Fetching users…")
+        users = paginate(headers, f"/workspaces/{ws_gid}/users", {"opt_fields": "name,email"})
+        for u in users:
+            storage.upsert_asana_user(gid=u["gid"], name=u.get("name", ""), email=u.get("email", ""))
+        counts["users"] = len(users)
 
-    # 3) Teams (org endpoint, fallback derived from projects)
-    report(6, "Fetching teams…")
-    try:
-        teams = paginate(headers, f"/organizations/{ws_gid}/teams",
-                         {"opt_fields": "name,description"})
-    except RuntimeError:
-        teams = []
-    for t in teams:
-        storage.upsert_asana_team(gid=t["gid"], name=t.get("name", ""),
-                                  description=t.get("description", ""))
-    counts["teams"] = len(teams)
+        # 3) Teams (org endpoint, fallback derived from projects)
+        report(6, "Fetching teams…")
+        try:
+            teams = paginate(headers, f"/organizations/{ws_gid}/teams",
+                             {"opt_fields": "name,description"})
+        except RuntimeError:
+            teams = []
+        for t in teams:
+            storage.upsert_asana_team(gid=t["gid"], name=t.get("name", ""),
+                                      description=t.get("description", ""))
+        counts["teams"] = len(teams)
 
-    # 4) Projects (workspace or portfolio source)
-    report(8, "Fetching projects…")
-    if cfg.get("project_source") == "portfolio":
-        proj_gid = cfg.get("portfolio_gid") or DEFAULT_PORTFOLIO_GID
-        projects = paginate(headers, f"/portfolios/{proj_gid}/items",
-                            {"opt_fields": PROJECT_OPT_FIELDS})
-    else:
-        projects = paginate(headers, "/projects",
-                            {"workspace": ws_gid, "opt_fields": PROJECT_OPT_FIELDS})
-    active_projects = [p for p in projects if not p.get("archived")]
-    for p in projects:
-        team = p.get("team") or {}
-        storage.upsert_asana_project(
-            gid=p["gid"], name=p.get("name", ""), team_gid=team.get("gid", ""),
-            team_name=team.get("name", ""), archived=1 if p.get("archived") else 0,
-            color=p.get("color", ""), notes=p.get("notes", ""),
-            created_at=p.get("created_at", ""), modified_at=p.get("modified_at", ""),
-            permalink=p.get("permalink_url", ""),
-        )
-    counts["projects"] = len(projects)
+        # 4) Projects (workspace or portfolio source)
+        report(8, "Fetching projects…")
+        if cfg.get("project_source") == "portfolio":
+            proj_gid = cfg.get("portfolio_gid") or DEFAULT_PORTFOLIO_GID
+            projects = paginate(headers, f"/portfolios/{proj_gid}/items",
+                                {"opt_fields": PROJECT_OPT_FIELDS})
+        else:
+            projects = paginate(headers, "/projects",
+                                {"workspace": ws_gid, "opt_fields": PROJECT_OPT_FIELDS})
+        active_projects = [p for p in projects if not p.get("archived")]
+        for p in projects:
+            team = p.get("team") or {}
+            storage.upsert_asana_project(
+                gid=p["gid"], name=p.get("name", ""), team_gid=team.get("gid", ""),
+                team_name=team.get("name", ""), archived=1 if p.get("archived") else 0,
+                color=p.get("color", ""), notes=p.get("notes", ""),
+                created_at=p.get("created_at", ""), modified_at=p.get("modified_at", ""),
+                permalink=p.get("permalink_url", ""),
+            )
+        counts["projects"] = len(projects)
 
-    # 5) Custom field definitions — only in deep mode (bounded sample).
-    #    Task rows already carry custom_fields name/value, so the catalog is
-    #    a convenience; per-project settings = 1 call × every project, which
-    #    is expensive in a 2,500-project workspace.
-    report(10, "Fetching custom field definitions…")
-    cf_seen: set[str] = set()
-    if deep:
-        for p in active_projects[:500]:
-            try:
-                settings = paginate(headers, f"/projects/{p['gid']}/custom_field_settings",
-                                    {"opt_fields": "custom_field.gid,custom_field.name,"
-                                                    "custom_field.resource_subtype,"
-                                                    "custom_field.description,"
-                                                    "custom_field.enum_options.name"})
-            except RuntimeError:
-                continue
-            for s in settings:
-                cf = s.get("custom_field") or {}
-                gid = cf.get("gid")
-                if not gid or gid in cf_seen:
+        # 5) Custom field definitions — only in deep mode (bounded sample).
+        #    Task rows already carry custom_fields name/value, so the catalog is
+        #    a convenience; per-project settings = 1 call × every project, which
+        #    is expensive in a 2,500-project workspace.
+        report(10, "Fetching custom field definitions…")
+        cf_seen: set[str] = set()
+        if deep:
+            for p in active_projects[:500]:
+                try:
+                    settings = paginate(headers, f"/projects/{p['gid']}/custom_field_settings",
+                                        {"opt_fields": "custom_field.gid,custom_field.name,"
+                                                        "custom_field.resource_subtype,"
+                                                        "custom_field.description,"
+                                                        "custom_field.enum_options.name"})
+                except RuntimeError:
                     continue
-                cf_seen.add(gid)
-                storage.upsert_asana_custom_field(
-                    gid=gid, name=cf.get("name", ""),
-                    type=cf.get("resource_subtype", ""),
-                    description=cf.get("description", ""),
-                    enum_options=[e.get("name", "") for e in (cf.get("enum_options") or [])],
-                )
-    counts["custom_fields"] = len(cf_seen)
+                for s in settings:
+                    cf = s.get("custom_field") or {}
+                    gid = cf.get("gid")
+                    if not gid or gid in cf_seen:
+                        continue
+                    cf_seen.add(gid)
+                    storage.upsert_asana_custom_field(
+                        gid=gid, name=cf.get("name", ""),
+                        type=cf.get("resource_subtype", ""),
+                        description=cf.get("description", ""),
+                        enum_options=[e.get("name", "") for e in (cf.get("enum_options") or [])],
+                    )
+        counts["custom_fields"] = len(cf_seen)
 
-    # 6) Tasks. 'all' = per-project full scan. 'delta'/'recent' = workspace search over
-    #    tasks changed since a window. 'incremental' = workspace search since a persistent
-    #    Checkpoint cursor. The windowed/incremental modes also pull stories/attachments/
-    #    subtasks (bounded result set).
-    proj_map = {p["gid"]: p for p in projects}
-    fetched = 0
+        # 6) Tasks. 'all' = per-project full scan. 'delta'/'recent' = workspace search over
+        #    tasks changed since a window. 'incremental' = workspace search since a persistent
+        #    Checkpoint cursor. The windowed/incremental modes also pull stories/attachments/
+        #    subtasks (bounded result set).
+        proj_map = {p["gid"]: p for p in projects}
+        fetched = 0
 
-    def _scan_all_projects(label_prefix: str, *, deep_scan: bool) -> None:
-        """Full per-project task scan — shared by mode='all' and the incremental
-        bootstrap (first run, no checkpoint yet)."""
-        nonlocal fetched
-        total_projects = max(len(active_projects), 1)
-        report(12, f"{label_prefix} — {len(active_projects)} projects…")
-        for idx, proj in enumerate(active_projects):
-            params: dict = {"project": proj["gid"], "opt_fields": TASK_OPT_FIELDS}
-            for task in paginate(headers, "/tasks", params):
-                _store_task(storage, headers, task, proj_map, deep=deep_scan)
-                fetched += 1
-                counts["tasks"] += 1
-            if (idx + 1) % 25 == 0 or idx == total_projects - 1:
-                report(min(95.0, 12 + (idx + 1) / total_projects * 83),
-                       f"{label_prefix} — {idx + 1}/{len(active_projects)} projects, {fetched} tasks…")
+        def _scan_all_projects(label_prefix: str, *, deep_scan: bool) -> None:
+            """Full per-project task scan — shared by mode='all' and the incremental
+            bootstrap (first run, no checkpoint yet)."""
+            nonlocal fetched
+            total_projects = max(len(active_projects), 1)
+            report(12, f"{label_prefix} — {len(active_projects)} projects…")
+            for idx, proj in enumerate(active_projects):
+                params: dict = {"project": proj["gid"], "opt_fields": TASK_OPT_FIELDS}
+                for task in paginate(headers, "/tasks", params):
+                    _store_task(storage, headers, task, proj_map, deep=deep_scan)
+                    fetched += 1
+                    counts["tasks"] += 1
+                if (idx + 1) % 25 == 0 or idx == total_projects - 1:
+                    report(min(95.0, 12 + (idx + 1) / total_projects * 83),
+                           f"{label_prefix} — {idx + 1}/{len(active_projects)} projects, {fetched} tasks…")
 
-    window = None
-    checkpoint = None
-    run_started_at = None
-    if mode == "recent":
-        window = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-    elif mode == "delta" and cfg.get("last_sync"):
-        window = cfg["last_sync"]
-    elif mode == "delta":
-        window = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-    elif mode == "incremental":
-        from sync_runner import Checkpoint  # local import: see module docstring for why
+        window = None
+        checkpoint = None
+        run_started_at = None
+        if mode == "recent":
+            window = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        elif mode == "delta" and cfg.get("last_sync"):
+            window = cfg["last_sync"]
+        elif mode == "delta":
+            window = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        elif mode == "incremental":
+            from sync_runner import Checkpoint  # local import: see module docstring for why
 
-        checkpoint = Checkpoint()
-        run_started_at = now_iso()
-        window = checkpoint.get("asana_tasks")  # None on first run -> bootstrap below
+            checkpoint = Checkpoint()
+            run_started_at = now_iso()
+            window = checkpoint.get("asana_tasks")  # None on first run -> bootstrap below
 
-    if window:
-        report(12, f"Fetching tasks changed since {window[:10]} — workspace search…")
-        # Asana's workspace task-search endpoint (POST /workspaces/{gid}/tasks/search,
-        # issued here as a GET with query params like the rest of this module) filters on
-        # `modified_at.after` (ISO-8601 datetime) — NOT `modified_since`. `modified_since`
-        # is not a field this endpoint accepts; the only sibling of that shape here is
-        # `completed_since`, on the unrelated plain /tasks-for-project listing endpoint.
-        # Confirmed against developers.asana.com/reference/searchtasksforworkspace (2026-09).
-        params_base: dict = {"opt_fields": TASK_OPT_FIELDS, "modified_at.after": window}
-        for completed_flag in ("false", "true"):
-            params = dict(params_base, completed=completed_flag)
-            for task in paginate(headers, f"/workspaces/{ws_gid}/tasks/search", params):
-                _store_task(storage, headers, task, proj_map, deep=True)
-                fetched += 1
-                counts["tasks"] += 1
-        if checkpoint is not None:
-            # Only advance after this batch is fully stored (loop above has completed).
+        if window:
+            report(12, f"Fetching tasks changed since {window[:10]} — workspace search…")
+            # Asana's workspace task-search endpoint (POST /workspaces/{gid}/tasks/search,
+            # issued here as a GET with query params like the rest of this module) filters on
+            # `modified_at.after` (ISO-8601 datetime) — NOT `modified_since`. `modified_since`
+            # is not a field this endpoint accepts; the only sibling of that shape here is
+            # `completed_since`, on the unrelated plain /tasks-for-project listing endpoint.
+            # Confirmed against developers.asana.com/reference/searchtasksforworkspace (2026-09).
+            params_base: dict = {"opt_fields": TASK_OPT_FIELDS, "modified_at.after": window}
+            for completed_flag in ("false", "true"):
+                params = dict(params_base, completed=completed_flag)
+                for task in paginate(headers, f"/workspaces/{ws_gid}/tasks/search", params):
+                    _store_task(storage, headers, task, proj_map, deep=True)
+                    fetched += 1
+                    counts["tasks"] += 1
+            if checkpoint is not None:
+                # Only advance after this batch is fully stored (loop above has completed).
+                checkpoint.advance("asana_tasks", run_started_at)
+        elif mode == "incremental":
+            # No checkpoint yet: bootstrap with a full per-project scan (same as mode='all'),
+            # then start cursoring forward from this run's start time.
+            _scan_all_projects("Bootstrapping incremental sync (no checkpoint yet)", deep_scan=deep)
             checkpoint.advance("asana_tasks", run_started_at)
-    elif mode == "incremental":
-        # No checkpoint yet: bootstrap with a full per-project scan (same as mode='all'),
-        # then start cursoring forward from this run's start time.
-        _scan_all_projects("Bootstrapping incremental sync (no checkpoint yet)", deep_scan=deep)
-        checkpoint.advance("asana_tasks", run_started_at)
-    else:
-        _scan_all_projects("Fetching tasks", deep_scan=deep)
+        else:
+            _scan_all_projects("Fetching tasks", deep_scan=deep)
 
     # 7) Done — record run + bump last_sync (report stored totals)
     final = storage.asana_counts()

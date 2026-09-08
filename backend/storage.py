@@ -1,4 +1,5 @@
 """SQLite storage layer for the compliance agent."""
+import contextlib
 import json
 import os
 import sqlite3
@@ -24,6 +25,31 @@ def _conn() -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         _local.conn = conn
     return _local.conn
+
+
+@contextlib.contextmanager
+def batch_writes(flush_every: int = 500):
+    """Suspend ``_upsert``'s per-row auto-commit on this thread, committing every
+    ``flush_every`` rows instead (plus a final commit on exit, success or error).
+
+    ``_upsert`` normally commits after every single row, which is fine for one-off writes
+    but pathological for a bulk pull (e.g. Asana's 266k-task workspace) — hundreds of
+    thousands of individual fsync'd commits. Batching still bounds memory (rows are written
+    to the DB as they're upserted, never held in Python) and how much work an interruption
+    can lose (at most ``flush_every`` rows), just without a commit per row.
+
+    Thread-local (mirrors ``_conn()``) so it only affects the calling thread — a bulk sync
+    runs on its own background thread (see ``main.py``'s ``asana_sync_start``), so unrelated
+    request-handling threads keep committing every row as before.
+    """
+    _local.batch_flush_every = flush_every
+    _local.batch_count = 0
+    try:
+        yield
+    finally:
+        _conn().commit()
+        _local.batch_flush_every = None
+        _local.batch_count = 0
 
 
 def init_db() -> None:
@@ -713,6 +739,19 @@ def clear_done_tasks() -> int:
 # --------------------------------------------------------------------------
 # Asana sync store
 # --------------------------------------------------------------------------
+def _maybe_commit(conn: sqlite3.Connection) -> None:
+    """Commit now, unless ``batch_writes()`` is active on this thread — then commit only
+    every ``flush_every`` calls (see ``batch_writes`` for why)."""
+    flush_every = getattr(_local, "batch_flush_every", None)
+    if not flush_every:
+        conn.commit()
+        return
+    _local.batch_count = getattr(_local, "batch_count", 0) + 1
+    if _local.batch_count >= flush_every:
+        conn.commit()
+        _local.batch_count = 0
+
+
 def _upsert(table: str, fields: dict, exclude: set[str] | None = None) -> None:
     """INSERT OR REPLACE a row built from a field dict (JSON-encodes lists/dicts)."""
     cols = []
@@ -732,7 +771,7 @@ def _upsert(table: str, fields: dict, exclude: set[str] | None = None) -> None:
         f"INSERT OR REPLACE INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
         vals,
     )
-    conn.commit()
+    _maybe_commit(conn)
 
 
 def merge_upsert(table: str, key_field: str, fields: dict, exclude: set[str] | None = None) -> None:
@@ -1031,7 +1070,7 @@ def replace_asana_task_memberships(task_gid: str, memberships: list[dict]) -> No
             "INSERT INTO asana_task_memberships VALUES (?,?,?,?,?,?,?,?)",
             (task_gid, gid, project.get("name") or "", section.get("gid") or "", section.get("name") or "", m.get("team_gid") or "", m.get("team_name") or "", now_iso()),
         )
-    conn.commit()
+    _maybe_commit(conn)
 
 
 def replace_asana_task_custom_fields(task_gid: str, values: list[dict]) -> None:
@@ -1052,7 +1091,7 @@ def replace_asana_task_custom_fields(task_gid: str, values: list[dict]) -> None:
             "INSERT INTO asana_task_custom_field_values VALUES (?,?,?,?,?,?,?,?)",
             (task_gid, gid, value.get("name") or "", value.get("type") or "", value.get("value") or "", number, date_value, now_iso()),
         )
-    conn.commit()
+    _maybe_commit(conn)
 
 
 def asana_kpi_definition_rows() -> list[dict]:

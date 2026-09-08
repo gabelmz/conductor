@@ -1506,19 +1506,66 @@ async function openFolder(path) {
   }
 }
 
+const ACTIVITY_JOB_META = {
+  asana_sync: { icon: 'sync', title: 'Asana sync' },
+  parse_catalog: { icon: 'cloud-upload', title: 'Catalog import' },
+  ai_process: { icon: 'chat-sparkle', title: 'AI processing' },
+};
+
+function activityCard(r) {
+  const pct = Math.max(0, Math.min(100, Number(r.progress) || 0));
+  const bar = r.active
+    ? `<div class="activity-progress"><div class="activity-progress-fill" style="width:${pct}%"></div></div>`
+    : '';
+  return `<div class="activity-card activity-card-${esc(r.status)}">
+      <span class="codicon codicon-${esc(r.icon)}"></span>
+      <div class="activity-card-body">
+        <div class="activity-card-head">
+          <span class="activity-card-title">${esc(r.title)}</span>
+          <span class="pill-int pill-int-activity-${esc(r.status)}">${esc(r.status)}</span>
+        </div>
+        <div class="activity-card-msg">${esc(r.text)}</div>
+        ${bar}
+      </div>
+      <div class="activity-time">${esc(timeAgo(r.t))}</div>
+    </div>`;
+}
+
 async function loadActivity() {
   const box = $('#activity-list');
   box.innerHTML = '<div class="folder-loading">Loading…</div>';
   try {
-    const [st, evs] = await Promise.all([api('/api/automation/stats'), api('/api/events?limit=30')]);
-    const runs = [];
-    (st.recent_ai || []).forEach((r) => runs.push({ t: r.created_at, icon: 'chat-sparkle', text: `AI ${r.workflow} (${r.provider})` }));
-    evs.forEach((e) => runs.push({ t: e.created_at, icon: 'radio-tower', text: `${e.source}${e.type ? ' · ' + e.type : ''}` }));
-    runs.sort((a, b) => Date.parse(b.t) - Date.parse(a.t));
-    box.innerHTML = runs.length
-      ? runs.map((r) => `<div class="activity-item"><span class="codicon codicon-${r.icon}"></span>
-          <div class="activity-text">${esc(r.text)}</div><div class="activity-time">${esc(timeAgo(r.t))}</div></div>`).join('')
-      : '<div class="empty-state">No activity yet.</div>';
+    const [st, evs, jobs] = await Promise.all([
+      api('/api/automation/stats'),
+      api('/api/events?limit=30'),
+      api('/api/jobs?limit=30'),
+    ]);
+    const items = [];
+    (jobs || []).forEach((j) => {
+      const meta = ACTIVITY_JOB_META[j.kind] || { icon: 'gear', title: j.kind };
+      const active = j.status === 'running' || j.status === 'queued';
+      items.push({
+        t: j.updated_at || j.created_at, icon: meta.icon, title: meta.title,
+        status: j.status, active, progress: j.progress, text: j.message || meta.title,
+      });
+    });
+    (st.recent_ai || []).forEach((r) => items.push({
+      t: r.created_at, icon: 'chat-sparkle', title: `AI ${r.workflow}`,
+      status: r.status || 'done', active: false, progress: null,
+      text: `${r.provider || ''}${r.model ? ' · ' + r.model : ''}`.trim() || r.workflow,
+    }));
+    evs.forEach((e) => items.push({
+      t: e.created_at, icon: 'radio-tower', title: e.source,
+      status: 'info', active: false, progress: null, text: e.type || e.source,
+    }));
+
+    const activeItems = items.filter((r) => r.active).sort((a, b) => Date.parse(b.t) - Date.parse(a.t));
+    const restItems = items.filter((r) => !r.active).sort((a, b) => Date.parse(b.t) - Date.parse(a.t));
+
+    let html = '';
+    if (activeItems.length) html += `<div class="activity-section-label">Active now (${activeItems.length})</div>${activeItems.map(activityCard).join('')}`;
+    if (restItems.length) html += `<div class="activity-section-label">Recent</div>${restItems.map(activityCard).join('')}`;
+    box.innerHTML = html || '<div class="empty-state">No activity yet.</div>';
   } catch (e) {
     box.innerHTML = `<div class="folder-error">${esc(e.message)}</div>`;
   }
