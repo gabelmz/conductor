@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.2.1 - 2026-09-08
+
+### Integrations and Spine
+
+- Added Supabase and Add New actions directly to the Integrations page.
+- Added Integrations and full Spine visibility views to the Settings window.
+
+### Desktop Release
+
+- Reduced Windows release output to one x64 NSIS installer instead of multiple architecture and portable artifacts.
+
 ## v2.2.0 - 2026-09-08
 
 ### Asana Sync

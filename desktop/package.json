@@ -1,7 +1,7 @@
 {
   "name": "conductor",
   "productName": "Conductor",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "private": true,
   "description": "Conductor — business process automation hub with AI workflows (desktop)",
   "main": "main.cjs",
@@ -10,7 +10,7 @@
   "scripts": {
     "start": "electron .",
     "smoke": "electron ui-smoke.cjs",
-    "dist": "electron-builder --win nsis portable",
+    "dist": "electron-builder --win nsis --x64",
     "cli": "node ../scripts/conductor-cli.mjs",
     "health": "node ../scripts/conductor-cli.mjs health",
     "doctor": "node ../scripts/conductor-cli.mjs doctor",
@@ -98,11 +98,9 @@
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "arm64"
+            "x64"
           ]
-        },
-        "portable"
+        }
       ],
       "icon": "assets/icon.ico"
     },
@@ -114,10 +112,7 @@
       "shortcutName": "Conductor",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "artifactName": "Conductor-Setup-${version}-${arch}.${ext}"
-    },
-    "portable": {
-      "artifactName": "Conductor-Portable-${version}.${ext}"
+      "artifactName": "Conductor-Setup-${version}.${ext}"
     }
   }
 }
