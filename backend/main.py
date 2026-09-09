@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Ensure backend/ is importable regardless of how uvicorn resolves the module
@@ -542,6 +543,17 @@ def tasks_clear_done():
 # --------------------------------------------------------------------------
 # Asana sync (all of Asana → local SQLite store)
 # --------------------------------------------------------------------------
+@app.on_event("startup")
+def _start_background_asana_sync() -> None:
+    """Keep Supabase's conductor_records mirror (and local SQLite, via
+    asana_tasks_adapter.apply()) warm continuously so normal reads never need to hit the
+    live Asana API. Registered as a startup event, not run at import time, so importing
+    main/app in tests never triggers live network calls — no test wraps TestClient(app) in
+    a `with` block, so lifespan/startup events never fire during the test suite."""
+    import sync_runner
+    sync_runner.start_background_loop()
+
+
 @app.get("/api/asana/status")
 def asana_status():
     """Sync config + store counts + last run."""
@@ -603,11 +615,16 @@ def asana_sync_start(body: dict):
 @app.post("/api/asana/hook/pull")
 def asana_auto_pull_hook(body: dict | None = None):
     """Auto-pull hook called when navigating to Asana page in Conductor.
-    Triggers delta sync if local data is stale (>15 mins) or if forced.
+
+    Safety net, not the primary refresh mechanism: the background sync loop
+    (sync_runner.start_background_loop, started at app startup) keeps Supabase and local
+    SQLite warm every 5 minutes on its own. Triggers a delta sync here only if local data is
+    stale (>30 mins — i.e. the background loop has missed several cycles, which signals it
+    isn't running rather than expected steady-state lag) or if forced.
     """
     body = body or {}
     force = bool(body.get("force"))
-    max_age_s = int(body.get("max_age_seconds") or 900)
+    max_age_s = int(body.get("max_age_seconds") or 1800)
 
     if not asana_sync.has_credentials():
         return {"ok": False, "triggered": False, "reason": "No PAT credentials configured"}
@@ -639,6 +656,10 @@ def asana_auto_pull_hook(body: dict | None = None):
 def asana_push_supabase():
     """Push local Asana tasks directly to Supabase."""
     import supabase_sync
+    import sync_runner
+    lease = sync_runner.SyncLease("asana_tasks")
+    if not lease.acquire("manual-push-supabase", ttl_s=120.0):
+        raise HTTPException(409, "A background Asana sync is already running — try again shortly.")
     try:
         res = supabase_sync.sync(
             direction="push",
@@ -647,6 +668,8 @@ def asana_push_supabase():
         return {"ok": True, "pushed": res["counts"]["pushed"], "detail": res}
     except Exception as exc:
         raise HTTPException(500, f"Supabase push failed: {exc}")
+    finally:
+        lease.release()
 
 
 @app.get("/api/asana/projects")

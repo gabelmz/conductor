@@ -148,15 +148,20 @@ alter table public.sync_outbox enable row level security;
 -- ---------------------------------------------------------------------------
 -- 6) pg_cron schedule invoking the asana-sync Edge Function.
 --
--- NOTE (author-time limitation, cannot be verified without a live `supabase db push` /
--- dashboard session, which this migration was explicitly authored WITHOUT running): pg_cron
--- and pg_net must already be enabled as extensions on this project (Database -> Extensions in
--- the Supabase dashboard, or a prior migration) for this block to succeed, and
--- `<PROJECT_REF>`/the service-role key below must be filled in with real values before this
--- migration is applied -- placeholders are used deliberately rather than a real key, since
--- this file may be committed to source control. `net.http_post` requires the pg_net
--- extension; if either extension is unavailable this block will error, so the whole migration
--- should be tried in a scratch/staging project first.
+-- Secrets are read from Supabase Vault at run time (vault.decrypted_secrets), NOT embedded in
+-- this file -- this file is committed to source control, and Vault is exactly Supabase's
+-- documented mechanism for keeping a secret out of a migration while still letting SQL read it
+-- (supabase.com/docs/guides/functions/schedule-functions,
+-- supabase.com/docs/guides/database/vault). Before applying this migration, create the two
+-- named secrets it depends on ONCE via the Supabase SQL editor (or `supabase db execute`) --
+-- never via a file that gets committed:
+--
+--   select vault.create_secret('https://<project-ref>.supabase.co', 'asana_sync_url');
+--   select vault.create_secret('<service-role-key>', 'asana_sync_key');
+--
+-- pg_cron and pg_net must already be enabled as extensions on this project (Database ->
+-- Extensions in the dashboard, or the create extension statements below, which are safe to
+-- run even if already enabled).
 -- ---------------------------------------------------------------------------
 create extension if not exists pg_cron with schema extensions;
 create extension if not exists pg_net with schema extensions;
@@ -174,10 +179,13 @@ select cron.schedule(
   '*/15 * * * *',
   $$
   select net.http_post(
-    url := 'https://<PROJECT_REF>.supabase.co/functions/v1/asana-sync',
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'asana_sync_url')
+           || '/functions/v1/asana-sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'Authorization', 'Bearer <REPLACE_WITH_SERVICE_ROLE_OR_SCHEDULED_FUNCTION_KEY>'
+      'Authorization', 'Bearer ' || (
+        select decrypted_secret from vault.decrypted_secrets where name = 'asana_sync_key'
+      )
     ),
     body := '{}'::jsonb
   );
@@ -192,6 +200,11 @@ select cron.schedule(
 -- are left untouched.
 --
 -- select cron.unschedule('asana-sync-every-15-min');
+--
+-- -- Vault secrets were created out-of-band (never by this file); drop them too if you're
+-- -- fully decommissioning this integration:
+-- -- select vault.delete_secret(id) from vault.secrets where name = 'asana_sync_url';
+-- -- select vault.delete_secret(id) from vault.secrets where name = 'asana_sync_key';
 --
 -- alter table public.sync_runs drop column if exists cursor_after;
 -- alter table public.sync_runs drop column if exists cursor_before;

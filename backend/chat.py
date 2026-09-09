@@ -349,16 +349,27 @@ def list_providers():
     mode, models and health. Only providers with keys (or proxy mode) are
     'configured' — the UI must never offer a target that 401s."""
     import providers
+    from concurrent.futures import ThreadPoolExecutor
 
-    out = []
-    for p in providers.available_providers():
-        if p["configured"]:
-            adapter = providers.build_adapter(p["id"], providers.resolve_api_key(p["id"]))
-            try:
-                p["health"] = adapter.health() if adapter else {"healthy": False}
-            except Exception as exc:
-                p["health"] = {"healthy": False, "error": str(exc)}
-        out.append(p)
+    out = list(providers.available_providers())
+    configured = [p for p in out if p["configured"]]
+
+    def _check(p: dict) -> dict:
+        adapter = providers.build_adapter(p["id"], providers.resolve_api_key(p["id"]))
+        try:
+            return adapter.health() if adapter else {"healthy": False}
+        except Exception as exc:
+            return {"healthy": False, "error": str(exc)}
+
+    # Each health() call is a blocking network round-trip (up to a several-second timeout) —
+    # doing them one after another made every Settings > AI Providers open take as long as the
+    # sum of every configured provider's check. Run them concurrently instead.
+    if configured:
+        with ThreadPoolExecutor(max_workers=len(configured)) as pool:
+            healths = list(pool.map(_check, configured))
+        for p, health in zip(configured, healths):
+            p["health"] = health
+
     return {"providers": out}
 
 
