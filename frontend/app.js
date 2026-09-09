@@ -2810,7 +2810,15 @@ async function renderSettingsTab(tab) {
       try {
         const vData = await api("/api/updates/versions");
         const history = box.querySelector("#release-history");
-        if (history) history.innerHTML = (vData.versions || []).slice(0, 12).map((v) => `v${esc(v.version)}${v.version === vData.current_version ? " · current" : ""}`).join(" · ") || "No published releases found.";
+        if (history)
+          history.innerHTML =
+            (vData.versions || [])
+              .slice(0, 12)
+              .map(
+                (v) =>
+                  `v${esc(v.version)}${v.version === vData.current_version ? " · current" : ""}`,
+              )
+              .join(" · ") || "No published releases found.";
       } catch {
         const history = box.querySelector("#release-history");
         if (history) history.textContent = "Release history unavailable.";

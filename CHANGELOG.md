@@ -1,8 +1,18 @@
 # Changelog
 
+## v2.3.0 - 2026-09-08
+
+### Release and Runtime Isolation
+
+- Published updater assets through GitHub Releases so in-app update checks have downloadable artifacts.
+- Moved packaged application data to the user's writable application-data directory.
+- Removed the fake rollback action and clarified supported update behavior.
+- Kept the Windows release as one x64 NSIS installer.
+
 ## v2.2.2 - 2026-09-08
 
 ### Updates and Portability
+
 - Fixed GitHub release publishing so installer assets are available to the in-app updater.
 - Store packaged app data in the user's writable application-data directory instead of the install folder.
 - Replaced the fake rollback action with accurate release-history and updater behavior.
