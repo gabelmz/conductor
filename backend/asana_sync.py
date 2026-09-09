@@ -174,6 +174,16 @@ def api_get(headers: dict, path: str, params: dict | None = None) -> dict:
                 time.sleep(2 * attempt)
                 continue
             body = e.read(300).decode("utf-8", errors="replace")
+            if e.code == 402:
+                # /workspaces/{gid}/tasks/search (used by delta/recent/incremental modes) is a
+                # premium-only Asana feature — a non-premium workspace gets 402 here, not a
+                # generic auth/network error. Surface that distinctly so it's diagnosable
+                # instead of reading as a mystery failure.
+                raise RuntimeError(
+                    "Asana API 402: task search requires a premium Asana workspace/team "
+                    f"(endpoint: {path}). Delta/recent/incremental sync modes depend on this "
+                    f"endpoint; mode='all' (full per-project scan) does not. Body: {body}"
+                )
             raise RuntimeError(f"Asana API {e.code}: {body}")
         except urllib.error.URLError as e:
             time.sleep(2 * attempt)
@@ -196,6 +206,49 @@ def paginate(headers: dict, path: str, params: dict | None = None) -> list[dict]
             p["offset"] = nxt["offset"]
         else:
             break
+    return items
+
+
+def paginate_search(headers: dict, path: str, params: dict) -> list[dict]:
+    """Manually paginate Asana's workspace task-search endpoint.
+
+    Unlike every other list endpoint, /workspaces/{gid}/tasks/search returns no next_page
+    object at all — per developers.asana.com/reference/searchtasksforworkspace, search
+    results "are not stable... the traditional pagination available elsewhere in the Asana
+    API is not available here," and the docs instead direct callers to sort by a timestamp
+    and advance the filter per page. Calling paginate() (offset-based) against this endpoint
+    silently stops after the first page (<=100 items, BATCH_SIZE) since next_page never
+    appears — for a large org, any window with more than 100 changed tasks would silently and
+    permanently drop the rest. This sorts by modified_at ascending (matching the
+    modified_at.after cursor this module already filters on) and advances that same filter to
+    the last item's own modified_at after each full page.
+
+    Known, accepted limitation: if >=100 tasks share the exact same modified_at timestamp at a
+    page boundary, some could be split across pages in a way this can't fully reconcile (Asana
+    offers no secondary/unique sort key on this endpoint) — astronomically unlikely in
+    practice, and far better than the guaranteed silent truncation this replaces.
+    """
+    items: list[dict] = []
+    p = dict(params)
+    p["limit"] = BATCH_SIZE
+    p["sort_by"] = "modified_at"
+    p["sort_ascending"] = "true"
+    seen_at_cursor: set[str] = set()
+    while True:
+        data = api_get(headers, path, p)
+        page = data.get("data", []) or []
+        items.extend(t for t in page if t.get("gid") not in seen_at_cursor)
+        if len(page) < BATCH_SIZE:
+            break
+        last_modified = page[-1].get("modified_at")
+        if not last_modified:
+            break
+        # modified_at.after is an exclusive lower bound, so advancing to the last item's own
+        # modified_at won't return it again on the next page — except for tasks sharing that
+        # exact timestamp, which seen_at_cursor guards against (harmless if .after turns out
+        # to already exclude them).
+        seen_at_cursor = {t.get("gid") for t in page if t.get("modified_at") == last_modified}
+        p["modified_at.after"] = last_modified
     return items
 
 
@@ -394,7 +447,7 @@ def sync_all(mode: str = "all", deep: bool = False,
             params_base: dict = {"opt_fields": TASK_OPT_FIELDS, "modified_at.after": window}
             for completed_flag in ("false", "true"):
                 params = dict(params_base, completed=completed_flag)
-                for task in paginate(headers, f"/workspaces/{ws_gid}/tasks/search", params):
+                for task in paginate_search(headers, f"/workspaces/{ws_gid}/tasks/search", params):
                     _store_task(storage, headers, task, proj_map, deep=True)
                     fetched += 1
                     counts["tasks"] += 1
@@ -405,6 +458,8 @@ def sync_all(mode: str = "all", deep: bool = False,
             # No checkpoint yet: bootstrap with a full per-project scan (same as mode='all'),
             # then start cursoring forward from this run's start time.
             _scan_all_projects("Bootstrapping incremental sync (no checkpoint yet)", deep_scan=deep)
+        else:
+            _scan_all_projects("Fetching tasks", deep_scan=deep)
             checkpoint.advance("asana_tasks", run_started_at)
         else:
             _scan_all_projects("Fetching tasks", deep_scan=deep)

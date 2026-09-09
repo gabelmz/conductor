@@ -332,8 +332,26 @@ def _scan_dir(dir_path: Path, source_dir: Path, depth: int, out: list[dict]) -> 
             })
 
 
-def discover_models(max_depth: int = 3) -> dict:
-    """Scan every known model store for .gguf files (LAW's scanLocalModels)."""
+_DISCOVER_CACHE_TTL_S = 30.0
+_discover_cache: dict | None = None
+_discover_cache_at: float = 0.0
+
+
+def discover_models(max_depth: int = 3, *, force: bool = False) -> dict:
+    """Scan every known model store for .gguf files (LAW's scanLocalModels).
+
+    A recursive filesystem walk across up to 6 directories on every call — cheap on a small
+    store, but on a machine with a large Ollama/LM Studio cache (or a network-backed home
+    directory) this was a real, measured contributor to Settings > AI Providers opening
+    slowly, since it ran synchronously on every single tab render. Cached for
+    _DISCOVER_CACHE_TTL_S: models on disk don't change fast enough to justify re-walking on
+    every open, and `force=True` (the route's `?force=true`) bypasses the cache on demand.
+    """
+    global _discover_cache, _discover_cache_at
+    now = time.monotonic()
+    if not force and _discover_cache is not None and (now - _discover_cache_at) < _DISCOVER_CACHE_TTL_S:
+        return _discover_cache
+
     found: list[dict] = []
     for d in default_search_dirs():
         _scan_dir(d, d, max_depth, found)
@@ -343,12 +361,15 @@ def discover_models(max_depth: int = 3) -> dict:
         key = model["path"].lower()
         by_path.setdefault(key, model)
     models = sorted(by_path.values(), key=lambda m: m["name"].lower())
-    return {"dirs": [str(d) for d in default_search_dirs()], "models": models}
+    result = {"dirs": [str(d) for d in default_search_dirs()], "models": models}
+    _discover_cache = result
+    _discover_cache_at = now
+    return result
 
 
 @router.get("/discover")
-def discover():
-    return discover_models()
+def discover(force: bool = False):
+    return discover_models(force=force)
 
 
 @router.post("/start")

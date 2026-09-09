@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -507,10 +509,14 @@ def asana_tasks_adapter(*, session: Any = None) -> SyncAdapter:
         items: list[dict[str, Any]] = []
         if cursor:
             # See asana_sync.py for the modified_at.after vs modified_since note — same field.
+            # Uses paginate_search, NOT paginate: the search endpoint returns no next_page at
+            # all (Asana's own docs: offset pagination "is not available here"), so the
+            # generic offset-based paginate() would silently cap at one page (100 items) and
+            # drop the rest of any larger changed-task batch. See paginate_search's docstring.
             params_base = {"opt_fields": asana_sync.TASK_OPT_FIELDS, "modified_at.after": cursor}
             for completed_flag in ("false", "true"):
                 params = dict(params_base, completed=completed_flag)
-                items.extend(asana_sync.paginate(headers, f"/workspaces/{ws_gid}/tasks/search", params))
+                items.extend(asana_sync.paginate_search(headers, f"/workspaces/{ws_gid}/tasks/search", params))
         else:
             # No checkpoint yet: bootstrap with a full per-project scan, same as asana_sync's
             # own mode="all"/mode="incremental" bootstrap, for guaranteed first-run coverage.
@@ -548,8 +554,70 @@ def asana_tasks_adapter(*, session: Any = None) -> SyncAdapter:
             }],
             headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
         )
+        # Keep local SQLite in lockstep with the Supabase mirror in the same pass, using the
+        # SAME merge_upsert-based upsert the manual Pull button already uses (no new upsert
+        # path). Every GET /api/asana/* read endpoint reads local SQLite only, so this is what
+        # makes those endpoints reflect this write immediately instead of waiting for a
+        # separate pull cycle.
+        supabase_sync._asana_task_upsert(item)
 
     return SyncAdapter(
         entity="asana_tasks", fetch_since=fetch_since, key_of=key_of,
         apply=apply, modified_at_of=modified_at_of,
     )
+
+
+# ---------------------------------------------------------------------------
+# Automatic background trigger
+# ---------------------------------------------------------------------------
+DEFAULT_INTERVAL_S = 300.0    # 5 min freshness cadence — not an Asana rate-limit concern;
+                              # asana_sync._headers() already centrally paces every call
+                              # (MIN_INTERVAL_S=0.45s) regardless of caller.
+DEFAULT_LEASE_TTL_S = 1800.0  # comfortably exceeds a first-run bootstrap full-project scan
+_BACKGROUND_OWNER = "desktop-app"
+
+
+def start_background_loop(*, interval_s: float = DEFAULT_INTERVAL_S,
+                           lease_ttl_s: float = DEFAULT_LEASE_TTL_S,
+                           owner: str = _BACKGROUND_OWNER,
+                           stop_event: threading.Event | None = None) -> threading.Thread:
+    """Start a daemon thread that keeps Supabase (and local SQLite) warm automatically.
+
+    Each tick calls run_sync(asana_tasks_adapter(), ...) if Asana credentials and a Supabase
+    connection are both configured; otherwise it quietly skips the tick (e.g. on first launch
+    before Settings has been filled in). Must only ever be started from an explicit call site
+    (FastAPI startup event) — never at import time, since every test file imports this module
+    /`main` routinely and must not trigger live network calls just by doing so.
+
+    `owner` is a fixed string, not PID-based: on a crash/restart the new process reclaims its
+    own lease immediately via SyncLease.acquire's same-owner re-entrant clause, instead of
+    waiting out `lease_ttl_s`. Acceptable for the common single-instance-desktop-app case.
+    """
+    stop_event = stop_event or threading.Event()
+
+    def _tick() -> None:
+        import asana_sync
+        import supabase_sync
+        if not asana_sync.has_credentials():
+            return
+        if not supabase_sync.get_status()["configured"]:
+            return
+        try:
+            run_sync(
+                adapter=asana_tasks_adapter(),
+                lease_owner=owner,
+                health_check=lambda: supabase_sync.test_connection()["ok"],
+                lease_ttl_s=lease_ttl_s,
+            )
+        except Exception as exc:  # noqa: BLE001 - background loop must never crash the app
+            print(f"[asana-supabase-sync] tick failed: {type(exc).__name__}: {exc}",
+                  file=sys.stderr, flush=True)
+
+    def _loop() -> None:
+        while not stop_event.is_set():
+            _tick()
+            stop_event.wait(interval_s)
+
+    thread = threading.Thread(target=_loop, name="asana-supabase-sync", daemon=True)
+    thread.start()
+    return thread
