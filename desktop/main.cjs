@@ -91,7 +91,7 @@ async function startBackend() {
   const env = { ...process.env, CONDUCTOR_ELECTRON_EXE: process.execPath };
   const cwd = backend.appRoot;
   // Backend logs go to <appRoot>/data/backend.log — keep the Electron console silent.
-  const dataDir = path.join(backend.appRoot, 'data');
+  const dataDir = app.getPath('userData');
   fs.mkdirSync(dataDir, { recursive: true });
   const logStream = fs.createWriteStream(path.join(dataDir, 'backend.log'), { flags: 'a' });
   // Keep the last chunk of log lines in memory so a failed boot is diagnosable.
@@ -100,7 +100,7 @@ async function startBackend() {
   // Make sure the app can find backend/ modules
   backendProc = spawn(backend.python, ['-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', String(backendPort), '--no-access-log', '--log-level', 'warning'], {
     cwd,
-    env,
+    env: { ...env, CONDUCTOR_DATA_DIR: dataDir },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -246,6 +246,7 @@ ipcMain.on('win:toggle-maximize', () => {
 // disk. Set: encrypt here, return ciphertext for the backend to persist.
 // Get: read the backend's key file, decrypt, return plaintext per-request.
 function backendDataDir() {
+  if (app.isPackaged) return app.getPath('userData');
   // Same resolution as findBackend(): packaged appRoot = dirname(resources),
   // dev appRoot = the repo root (backend/ lives there).
   const here = __dirname; // .../resources/app.asar in packaged; .../conductor/desktop in dev

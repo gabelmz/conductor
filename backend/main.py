@@ -70,7 +70,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="2.2.1",
+    version="2.2.2",
 )
 
 app.add_middleware(
@@ -116,7 +116,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "2.2.1",
+        "version": "2.2.2",
         "products": storage.count_products(),
     }
 
@@ -176,27 +176,19 @@ def list_update_versions():
 
     releases.sort(key=lambda x: x["version"], reverse=True)
     return {
-        "current_version": "2.2.1",
+        "current_version": "2.2.2",
         "versions": releases,
     }
 
 
 @app.post("/api/updates/rollback")
 def rollback_version(body: dict):
-    """Trigger version switch or rollback to a selected release version."""
-    target_version = str(body.get("target_version") or "").strip().lstrip("v")
-    if not target_version:
-        raise HTTPException(400, "target_version is required")
-
-    job_id = storage.create_job("version_rollback", None)
-    storage.update_job(job_id, status="done", progress=100, message=f"Rolled back application version target to v{target_version}")
-
-    return {
-        "ok": True,
-        "current_version": "2.2.1",
-        "target_version": target_version,
-        "message": f"Successfully set version target to v{target_version}. Restart the application to finalize.",
-    }
+    """Reject the legacy fake rollback endpoint instead of claiming it changed versions."""
+    raise HTTPException(
+        409,
+        "Version rollback is not supported in-app. Install an older signed GitHub release manually; "
+        "the updater only installs newer releases.",
+    )
 
 
 @app.get("/api/regulations")
@@ -928,7 +920,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "2.2.1",
+        "version": "2.2.2",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,

@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.2.2 - 2026-09-08
+
+### Updates and Portability
+- Fixed GitHub release publishing so installer assets are available to the in-app updater.
+- Store packaged app data in the user's writable application-data directory instead of the install folder.
+- Replaced the fake rollback action with accurate release-history and updater behavior.
+
 ## v2.2.1 - 2026-09-08
 
 ### Integrations and Spine

@@ -2743,25 +2743,9 @@ async function renderSettingsTab(tab) {
         </div>
 
         <div class="settings-section" style="margin-top:1rem;">
-          <div class="settings-title"><span class="codicon codicon-history"></span> Version Target &amp; Rollback</div>
-          <div class="settings-note">Switch application build targets or rollback to a previous release version.</div>
-          <div class="version-rollback-box">
-            <label class="field" style="flex:1;">
-              <span>Release Target</span>
-              <select id="upd-version-select" class="input-select" style="width:100%; height:32px; padding:0 8px;">
-                <option value="2.0.0">v2.0.0 (Current / Latest)</option>
-                <option value="1.9.6">v1.9.6</option>
-                <option value="1.9.5">v1.9.5</option>
-                <option value="1.7.0">v1.7.0</option>
-                <option value="1.6.0">v1.6.0</option>
-                <option value="1.5.0">v1.5.0</option>
-                <option value="1.4.0">v1.4.0</option>
-              </select>
-            </label>
-            <button class="btn-secondary" id="btn-rollback-version" style="height:32px; align-self:flex-end;">
-              <span class="codicon codicon-history"></span> Rollback / Switch Target
-            </button>
-          </div>
+          <div class="settings-title"><span class="codicon codicon-history"></span> Release history</div>
+          <div class="settings-note">The installed app checks GitHub Releases and installs newer signed releases. Older versions are available for manual installation from the release history; the updater will not downgrade an installed app.</div>
+          <div id="release-history" class="settings-note">Loading release history…</div>
         </div>
 
         <div class="about-pillars">
@@ -2821,53 +2805,17 @@ async function renderSettingsTab(tab) {
         window.desktop.installUpdate();
     });
 
-    // Populate version selector from backend updates API
+    // Populate release history from the backend updates API.
     (async () => {
       try {
         const vData = await api("/api/updates/versions");
-        const select = box.querySelector("#upd-version-select");
-        if (select && vData && vData.versions && vData.versions.length) {
-          select.innerHTML = vData.versions
-            .map(
-              (v) =>
-                `<option value="${esc(v.version)}">v${esc(v.version)}${v.version === vData.current_version ? " (Current / Latest)" : ""}</option>`,
-            )
-            .join("");
-        }
+        const history = box.querySelector("#release-history");
+        if (history) history.innerHTML = (vData.versions || []).slice(0, 12).map((v) => `v${esc(v.version)}${v.version === vData.current_version ? " · current" : ""}`).join(" · ") || "No published releases found.";
       } catch {
-        /* ignored */
+        const history = box.querySelector("#release-history");
+        if (history) history.textContent = "Release history unavailable.";
       }
     })();
-
-    // Wire Rollback Button
-    box
-      .querySelector("#btn-rollback-version")
-      .addEventListener("click", async () => {
-        const select = box.querySelector("#upd-version-select");
-        const targetVersion = select ? select.value : "1.6.0";
-        if (
-          !confirm(
-            `Rollback / switch application version target to v${targetVersion}?`,
-          )
-        )
-          return;
-
-        try {
-          const res = await api("/api/updates/rollback", {
-            method: "POST",
-            body: { target_version: targetVersion },
-          });
-          toast(
-            res.message || `Set version target to v${targetVersion}`,
-            "info",
-          );
-          setStatus(
-            `Version target set to v${targetVersion}. Restart to apply.`,
-          );
-        } catch (e) {
-          toast("Rollback failed: " + e.message, "err");
-        }
-      });
     return;
   }
 }
