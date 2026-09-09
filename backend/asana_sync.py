@@ -458,8 +458,6 @@ def sync_all(mode: str = "all", deep: bool = False,
             # No checkpoint yet: bootstrap with a full per-project scan (same as mode='all'),
             # then start cursoring forward from this run's start time.
             _scan_all_projects("Bootstrapping incremental sync (no checkpoint yet)", deep_scan=deep)
-        else:
-            _scan_all_projects("Fetching tasks", deep_scan=deep)
             checkpoint.advance("asana_tasks", run_started_at)
         else:
             _scan_all_projects("Fetching tasks", deep_scan=deep)
