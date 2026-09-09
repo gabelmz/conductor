@@ -1265,7 +1265,7 @@ async function renderAsana() {
       </div>
       <div class="view-actions">
         <button class="btn-secondary" id="btn-asana-push-sb"><span class="codicon codicon-cloud-upload"></span> Push to Supabase</button>
-        <button class="btn-primary" id="btn-asana-sync"><span class="codicon codicon-sync"></span> Sync now</button>
+        <button class="btn-primary" id="btn-asana-sync" title="Background sync keeps this fresh automatically — use this to rebuild everything from scratch"><span class="codicon codicon-sync"></span> Force full resync</button>
       </div>
     </div>
 
@@ -1362,8 +1362,8 @@ async function renderAsana() {
   });
 
   root.querySelector('#btn-asana-sync').addEventListener('click', async () => {
-    toast('Sync started — watch the job in the sidebar counts', 'info');
-    try { await api('/api/asana/sync', { method: 'POST', body: { mode: 'recent' } }); }
+    toast('Full resync started — watch the job in the sidebar counts', 'info');
+    try { await api('/api/asana/sync', { method: 'POST', body: { mode: 'all' } }); }
     catch (e) { toast(e.message, 'err'); }
   });
 
@@ -1534,11 +1534,19 @@ async function renderSettingsTab(tab) {
   if (tab === 'prompt') { renderPromptTab(); return; }
 
   if (tab === 'chat') {
-    let cfg = {}, provs = { providers: [] }, disc = { models: [] }, keys = { keys: {} };
-    try { cfg = await api('/api/chat/config'); } catch { /* */ }
-    try { provs = await api('/api/chat/providers'); } catch { /* */ }
-    try { disc = await api('/api/llama/discover'); } catch { /* */ }
-    try { keys = await api('/api/chat/keys'); } catch { /* */ }
+    // These four calls are independent of each other — fetch in parallel instead of
+    // sequentially awaiting each one, which was the single biggest contributor to a slow
+    // Settings open (providers' health checks alone can take seconds; discover walks disk).
+    const [cfgRes, provsRes, discRes, keysRes] = await Promise.allSettled([
+      api('/api/chat/config'),
+      api('/api/chat/providers'),
+      api('/api/llama/discover'),
+      api('/api/chat/keys'),
+    ]);
+    const cfg = cfgRes.status === 'fulfilled' ? cfgRes.value : {};
+    const provs = provsRes.status === 'fulfilled' ? provsRes.value : { providers: [] };
+    const disc = discRes.status === 'fulfilled' ? discRes.value : { models: [] };
+    const keys = keysRes.status === 'fulfilled' ? keysRes.value : { keys: {} };
 
     const providerCards = (provs.providers || []).map((p) => {
       const health = p.health || {};

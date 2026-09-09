@@ -458,13 +458,33 @@ def api_read_records(entity: str, limit: int = 500) -> list[dict[str, Any]]:
 
 @router.post("/sync/{dataset}/{direction}")
 def api_sync(dataset: str, direction: str) -> dict[str, Any]:
+    import sync_runner  # local import only — this module deliberately avoids a module-level
+                         # dependency on sync_runner/storage (see module docstring)
     try:
-        result = sync(direction=direction, adapters=local_adapters(dataset))
+        adapters = local_adapters(dataset)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    sync_runner.init()
+    leases = [sync_runner.SyncLease(entity) for entity in adapters]
+    held: list[sync_runner.SyncLease] = []
+    try:
+        for lease in leases:
+            if not lease.acquire("manual-mcp-sync-hub", ttl_s=120.0):
+                raise HTTPException(
+                    409, "A background sync for this dataset is already running — try again shortly."
+                )
+            held.append(lease)
+        result = sync(direction=direction, adapters=adapters)
         total = result["counts"]["pushed"] + result["counts"]["pulled"]
         result.update(ok=True, count=total, dataset=dataset,
                       message=f"{direction.title()} synced {total} {dataset.replace('_', ' ')} records")
         return result
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(502, f"Supabase sync failed: {type(exc).__name__}: {exc}") from exc
+    finally:
+        for lease in held:
+            lease.release()

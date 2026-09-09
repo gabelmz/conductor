@@ -1,7 +1,9 @@
 """Tests for backend/sync_runner.py — SyncLease, Checkpoint, Outbox, run_sync."""
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import Mock
 import json
 import threading
@@ -9,9 +11,13 @@ import threading
 import pytest
 from fastapi.testclient import TestClient
 
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(APP_DIR / "backend"))
+
 import storage
 from main import app
-from backend import sync_runner
+import sync_runner
 
 
 @pytest.fixture(autouse=True)

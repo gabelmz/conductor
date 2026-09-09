@@ -72,6 +72,14 @@ async function asanaGet(pat: string, path: string, params: Record<string, string
   });
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 402) {
+      // /workspaces/{gid}/tasks/search is a premium-only Asana feature — a non-premium
+      // workspace gets 402 here, not a generic auth/network error. Surface that distinctly.
+      throw new Error(
+        `Asana API 402: task search requires a premium Asana workspace/team (endpoint: ${path}). ` +
+          `Body: ${body.slice(0, 300)}`,
+      );
+    }
     // Never include the Authorization header/PAT in a thrown error message.
     throw new Error(`Asana API ${res.status} for ${path}: ${body.slice(0, 300)}`);
   }
@@ -96,6 +104,54 @@ async function asanaPaginate(pat: string, path: string, params: Record<string, s
   return items;
 }
 
+// Manual pagination for Asana's workspace task-search endpoint — mirrors
+// backend/asana_sync.py's paginate_search(). Unlike every other Asana list endpoint, search
+// returns no next_page object at all: per developers.asana.com/reference/searchtasksforworkspace,
+// "the traditional pagination available elsewhere in the Asana API is not available here,"
+// and the docs instead direct callers to sort by a timestamp and advance the filter per page.
+// Using asanaPaginate's offset-based loop against this endpoint would silently stop after the
+// first page (<=100 items) and drop the rest of any larger changed-task batch — for this org's
+// scale, a real and previously-undetected data-loss bug, not a hypothetical one.
+//
+// Known, accepted limitation: if >=100 tasks share the exact same modified_at timestamp at a
+// page boundary, some could be split across pages in a way this can't fully reconcile (Asana
+// offers no secondary/unique sort key on this endpoint) — astronomically unlikely in practice.
+async function paginateSearch(
+  pat: string,
+  path: string,
+  params: Record<string, string>,
+): Promise<AsanaTask[]> {
+  const items: AsanaTask[] = [];
+  let cursorAfter = params["modified_at.after"];
+  let seenAtCursor = new Set<string>();
+  const pageSize = 100;
+  // deno-lint-ignore no-constant-condition
+  while (true) {
+    const page = await asanaGet(pat, path, {
+      ...params,
+      "modified_at.after": cursorAfter,
+      limit: String(pageSize),
+      sort_by: "modified_at",
+      sort_ascending: "true",
+    });
+    const data = (page.data as AsanaTask[] | undefined) ?? [];
+    for (const task of data) {
+      if (!seenAtCursor.has(task.gid)) items.push(task);
+    }
+    if (data.length < pageSize) break;
+    const last = data[data.length - 1];
+    const lastModified = last?.modified_at;
+    if (!lastModified) break;
+    // modified_at.after is an exclusive lower bound, so advancing to the last item's own
+    // modified_at won't return it again on the next page — except for tasks sharing that
+    // exact timestamp, which seenAtCursor guards against (harmless if .after already
+    // excludes them).
+    seenAtCursor = new Set(data.filter((t) => t.modified_at === lastModified).map((t) => t.gid));
+    cursorAfter = lastModified;
+  }
+  return items;
+}
+
 async function fetchChangedTasks(pat: string, workspaceGid: string, cursor: string | null): Promise<{ items: AsanaTask[]; nextCursor: string }> {
   const startedAt = new Date().toISOString();
   const items: AsanaTask[] = [];
@@ -106,7 +162,7 @@ async function fetchChangedTasks(pat: string, workspaceGid: string, cursor: stri
     // mode="incremental" uses, kept identical deliberately. Confirmed against
     // developers.asana.com/reference/searchtasksforworkspace.
     for (const completed of ["false", "true"]) {
-      const page = await asanaPaginate(pat, `/workspaces/${workspaceGid}/tasks/search`, {
+      const page = await paginateSearch(pat, `/workspaces/${workspaceGid}/tasks/search`, {
         opt_fields: TASK_OPT_FIELDS,
         "modified_at.after": cursor,
         completed,
