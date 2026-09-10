@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.4.0 - 2026-09-10
+
+### Reporting and Automation
+
+- Added provider detection to the automation flow so runs identify their source provider.
+- Added new team KPI metrics to the reporting output.
+- Updated the dashboard to surface the new KPI metrics.
+
+### Scraping
+
+- Added the ASIN scraping API script.
+
 ## v2.3.0 - 2026-09-08
 
 ### Release and Runtime Isolation
