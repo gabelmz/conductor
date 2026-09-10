@@ -8,7 +8,7 @@ denominator output, snapshot metrics, and cell-exact drilldown records.
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -28,6 +28,8 @@ METRICS = {
     "overdue_count": {"label": "Overdue Tasks", "unit": "count_snapshot", "date_basis": "snapshot"},
     "overdue_rate": {"label": "Overdue Tasks % of Total", "unit": "percent_snapshot", "date_basis": "snapshot"},
     "sla_missed_count": {"label": "Initial SLA Missed", "unit": "count", "date_basis": "completed_at"},
+    "avg_completions_per_assignee": {"label": "Avg Completions per Assignee", "unit": "tasks_per_assignee", "date_basis": "completed_at"},
+    "top_task_types": {"label": "Most Common Task Types", "unit": "label", "date_basis": "completed_at"},
 }
 DIMENSIONS = {"team", "project", "section", "assignee", "week", "month"}
 DATE_BASES = {"created_at", "completed_at", "modified_at", "due_on"}
@@ -162,6 +164,10 @@ def _metric_contribution(metric: str, task: dict, cf_values: list[dict], period_
     if metric == "sla_missed_count":
         missed = any("sla" in str(v.get("field_name") or "").lower() and "miss" in str(v.get("field_name") or "").lower() and str(v.get("value_text") or "").lower() in ("yes", "true", "missed", "failed") for v in cf_values)
         return (1.0 if missed else 0.0), None, ([gid] if missed else []), []
+    if metric == "avg_completions_per_assignee":
+        return (1.0, None, [gid], []) if done else (None, None, [], [])
+    if metric == "top_task_types":
+        return (1.0, None, [gid], []) if done else (None, None, [], [])
     raise HTTPException(422, f"Unsupported metric '{metric}'")
 
 
@@ -200,6 +206,7 @@ def pivot(body: dict) -> dict:
 
     cells: dict[tuple[str, str], dict] = {}
     tasks, memberships, cf_values = _all_facts()
+    tasks_by_gid = {t["gid"]: t for t in tasks}
     for task in tasks:
         # Snapshot metrics need task state as of the selected end (or now); date
         # range means the selected period cannot be empty merely because due_on is blank.
@@ -226,10 +233,22 @@ def pivot(body: dict) -> dict:
 
     out_cells = []
     for cell in cells.values():
-        denominator = cell["denominator"] if metric in ("completion_rate", "sla_adherence", "overdue_rate", "avg_cycle_time_days") else None
-        value = _value(metric, cell["numerator"], denominator)
+        top_label = ""
+        if metric == "avg_completions_per_assignee":
+            names = {tasks_by_gid[g].get("assignee_name") for g in cell["records"].get("numerator", ()) if g in tasks_by_gid}
+            denominator = float(len(names)) or None
+            value = (cell["numerator"] / denominator) if denominator else None
+        elif metric == "top_task_types":
+            counts = Counter(str((tasks_by_gid.get(g) or {}).get("resource_subtype") or "default_task").replace("_", " ").title() for g in cell["records"].get("numerator", ()))
+            top_label, top_count = counts.most_common(1)[0] if counts else ("", 0)
+            denominator = None
+            value = float(top_count)
+        else:
+            denominator = cell["denominator"] if metric in ("completion_rate", "sla_adherence", "overdue_rate", "avg_cycle_time_days") else None
+            value = _value(metric, cell["numerator"], denominator)
         out_cells.append({
             "row": cell["row"], "column": cell["column"], "numerator": cell["numerator"], "denominator": denominator,
+            "label": top_label or None,
             "value": value, "record_counts": {k: len(v) for k, v in cell["records"].items()},
             "record_ids": {k: sorted(v) for k, v in cell["records"].items()},
         })

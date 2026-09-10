@@ -1127,8 +1127,14 @@ def automation_stats():
     try:
         import chat
         cfg = chat._load_config()
-        provider = {"provider": cfg["provider"], "model": cfg["llama_model"] if cfg["provider"] == "llama" else cfg["model"],
-                    "configured": bool(cfg["api_key"]) or cfg["provider"] == "llama"}
+        pid = cfg["provider"]
+        try:
+            import providers as _providers
+            any_key = any(_providers.has_key(p) for p in _providers.HOSTED_PROVIDERS)
+        except Exception:
+            any_key = False
+        provider = {"provider": pid, "model": cfg["llama_model"] if pid == "llama" else cfg["model"],
+                    "configured": pid == "llama" or bool(cfg["api_key"]) or any_key}
     except Exception:
         provider = {"provider": "none", "model": "", "configured": False}
 

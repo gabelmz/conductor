@@ -1455,6 +1455,8 @@ td {
 .pill-int-configured { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
 .pill-int-simulated { background: color-mix(in srgb, var(--cyan) 18%, transparent); color: var(--cyan); }
 .pill-int-unconfigured { background: color-mix(in srgb, var(--muted-fg) 18%, transparent); color: var(--muted-fg); }
+.home-status-pill.home-status-ok { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.home-status-pill.home-status-warn { background: color-mix(in srgb, var(--yellow) 18%, transparent); color: var(--yellow); }
 
 .pill-run { display: inline-block; padding: 0.0625rem 0.5rem; border-radius: 6px; font-size: 0.59375rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 .pill-run-success { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }

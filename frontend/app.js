@@ -857,10 +857,9 @@ async function renderDashboard() {
   }
   state.stats = st;
   const prov = st.provider || {};
-  const providerPill =
-    prov.configured ?
-      `<span class="home-status-pill" style="background:var(--t-function-success)">${esc(prov.provider)} · ${esc(prov.model || "—")}</span>`
-    : `<span class="home-status-pill" style="background:var(--t-function-warning)">no AI provider — configure in Settings</span>`;
+  const providerPill = prov.configured
+    ? `<span class="home-status-pill home-status-ok">${esc(prov.provider)} · ${esc(prov.model || "—")}</span>`
+    : `<span class="home-status-pill home-status-warn">no AI provider — configure in Settings</span>`;
 
   root.innerHTML = `
     <div class="view">
@@ -1814,7 +1813,7 @@ async function renderAsana() {
 
   const teamControl = root.querySelector("#asana-team-kpi-controls");
   const teamTable = root.querySelector("#asana-team-kpi-table");
-  teamControl.innerHTML = `<label class="field"><span>Metric</span><select id="asana-kpi-metric"><option value="count_completed">Tasks Completed</option><option value="count_tasks">Tasks Created</option><option value="weighted_completions">Weighted Completions</option><option value="completion_rate">Task Completion Rate</option><option value="sla_adherence">Internal SLA</option><option value="avg_cycle_time_days">Average Time to Close</option><option value="overdue_count">Overdue Tasks</option><option value="overdue_rate">Overdue Tasks %</option><option value="sla_missed_count">Initial SLA Missed</option></select></label><label class="field"><span>View</span><select id="asana-kpi-grain"><option value="week">Weekly (Sun–Sat)</option><option value="month">Monthly</option></select></label><button class="btn-primary" id="btn-asana-kpi-run" style="align-self:flex-end"><span class="codicon codicon-refresh"></span> Refresh Table</button>`;
+  teamControl.innerHTML = `<label class="field"><span>Metric</span><select id="asana-kpi-metric"><option value="count_completed">Completions</option><option value="avg_cycle_time_days">Avg Time to Close</option><option value="avg_completions_per_assignee">Avg Completions per Assignee</option><option value="top_task_types">Most Common Task Types</option><option value="count_tasks">Tasks Created</option><option value="completion_rate">Completion Rate</option><option value="overdue_count">Overdue Tasks</option></select></label><label class="field"><span>View</span><select id="asana-kpi-grain"><option value="week">Weekly (Sun–Sat)</option><option value="month">Monthly</option></select></label><button class="btn-primary" id="btn-asana-kpi-run" style="align-self:flex-end"><span class="codicon codicon-refresh"></span> Refresh Table</button>`;
   const loadTeamKpis = async () => {
     teamTable.innerHTML =
       '<div class="folder-loading">Computing team KPI pivot…</div>';
@@ -1839,7 +1838,7 @@ async function renderAsana() {
         if (!c || c.value == null) return "N/A";
         if (data.metric.unit.includes("percent"))
           return `${(c.value * 100).toFixed(1)}%`;
-        return Number(c.value).toFixed(data.metric.unit === "days" ? 1 : 0);
+        return Number(c.value).toFixed(data.metric.unit === "days" || data.metric.unit === "tasks_per_assignee" ? 1 : 0);
       };
       teamTable.innerHTML = `<div class="settings-note">Team-first membership attribution · ${esc(data.metric.label)} · click a value for exact task drilldown.</div><table class="data-table" style="margin-top:0.5rem"><thead><tr><th>Team</th>${cols.map((c) => `<th class="mono">${esc(c)}</th>`).join("")}</tr></thead><tbody>${
         rows
@@ -1848,7 +1847,7 @@ async function renderAsana() {
               `<tr><td><b>${esc(r)}</b></td>${cols
                 .map((c) => {
                   const cell = byCell.get(`${r}|${c}`);
-                  return `<td>${cell ? `<button class="btn-secondary btn-sm asana-kpi-cell" data-team="${esc(r)}" data-period="${esc(c)}" style="min-width:64px">${fmt(cell)}</button>` : "—"}</td>`;
+                  return `<td>${cell ? `<button class="btn-secondary btn-sm asana-kpi-cell" data-team="${esc(r)}" data-period="${esc(c)}" style="min-width:64px">${metric === "top_task_types" && cell.label ? `${esc(cell.label)} · ` : ""}${fmt(cell)}</button>` : "—"}</td>`;
                 })
                 .join("")}</tr>`,
           )
@@ -4527,6 +4526,8 @@ function renderAppearance() {
     b.classList.toggle("active", b.dataset.mode === uiState.mode),
   );
   const ed = $("#token-editor");
+  const buildTokenGroups = () => {
+    ed.replaceChildren();
   ed.innerHTML = "";
   for (const grp of TOKEN_SCHEMA) {
     const d = el("details", "token-group");
@@ -4542,8 +4543,10 @@ function renderAppearance() {
     const body = el("div", "tg-body");
     for (const f of grp.fields) body.appendChild(tokenRow(f));
     d.appendChild(body);
-    ed.appendChild(d);
-  }
+      ed.appendChild(d);
+    }
+  };
+  requestAnimationFrame(buildTokenGroups);
   buildPreview();
   renderSkins();
   updateUiDirty();
