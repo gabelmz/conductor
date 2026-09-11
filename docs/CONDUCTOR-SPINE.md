@@ -58,6 +58,12 @@ safeStorage/local files; `secret_refs` only names a local secret reference.
 
 ## Cloud Target
 
-Supabase project `dfvylthyfrcarucyqgru` now contains the `conductor.*` mirror
-tables with RLS enabled. Backend/server credentials are required before an
-application sync job writes to those tables.
+`conductor.*` is created by `supabase/migrations/20260910_0003_conductor_schema.sql`
+— apply it with `supabase db push` (or run it directly against the project)
+before any sync job can write to it. RLS is enabled with no public policies
+(service-role only). The `conductor` schema must also be added to PostgREST's
+exposed-schemas list (Dashboard -> Settings -> API -> Exposed schemas) before
+a REST call against it will succeed — creating the schema alone is not
+sufficient. `backend/spine_sync.py` (`push_all()`) is the only writer — a
+push-only mirror job (spine SQLite is authoritative; nothing reads back from
+`conductor.*`).

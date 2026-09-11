@@ -107,8 +107,78 @@ SOURCES = {
     },
 }
 
+# --------------------------------------------------------------------------
+# Supabase-backed sources — a read-only allowlist of (schema, table) pairs
+# from the shared Supabase project's `product` schema. Deliberately an
+# explicit allowlist, never a client-supplied schema/table: several other
+# exposed schemas on this project (`registry`, `lumi`) hold tables literally
+# named `keys` and are unrelated to Conductor's own domain, so nothing here
+# ever accepts a caller-chosen schema/table name.
+# --------------------------------------------------------------------------
+SUPABASE_SOURCES = {
+    "supabase_products": {"schema": "product", "table": "products", "label": "Supabase — Products (live)"},
+    "supabase_suggested": {"schema": "product", "table": "suggested", "label": "Supabase — Suggested Listings (live)"},
+}
+
+
+def _supabase_rows(schema: str, table: str, limit: int, q: str = "") -> list[dict]:
+    """Read-only fetch from an allowlisted Supabase table. Returns [] (never
+    raises) if Supabase isn't configured or the request fails — this is a
+    browsing convenience, not a critical path, and must never break the
+    Data Management view just because the live project is unreachable."""
+    import supabase_sync
+    import requests
+
+    cfg = supabase_sync._load_config()
+    if not (cfg["url"] and cfg["service_key"]):
+        return []
+    base = cfg["url"].rstrip("/") + "/rest/v1"
+    headers = {
+        "apikey": cfg["service_key"],
+        "Authorization": f"Bearer {cfg['service_key']}",
+        "Accept-Profile": schema,
+    }
+    try:
+        resp = requests.get(
+            f"{base}/{table}", headers=headers,
+            params={"select": "*", "limit": min(max(limit, 1), 1000)}, timeout=15,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+    except Exception:
+        return []
+    if q:
+        ql = q.lower()
+        rows = [r for r in rows if ql in json.dumps(r, default=str).lower()]
+    return rows if isinstance(rows, list) else []
+
+
+def _supabase_count(schema: str, table: str) -> int:
+    import supabase_sync
+    import requests
+
+    cfg = supabase_sync._load_config()
+    if not (cfg["url"] and cfg["service_key"]):
+        return 0
+    base = cfg["url"].rstrip("/") + "/rest/v1"
+    headers = {
+        "apikey": cfg["service_key"],
+        "Authorization": f"Bearer {cfg['service_key']}",
+        "Accept-Profile": schema,
+        "Prefer": "count=exact",
+    }
+    try:
+        resp = requests.get(f"{base}/{table}", headers=headers, params={"select": "*", "limit": 0}, timeout=15)
+        total = resp.headers.get("content-range", "*/0").split("/")[-1]
+        return int(total) if total.isdigit() else 0
+    except Exception:
+        return 0
+
 
 def _get_rows(source: str, limit: int, q: str = "", tag: str = "") -> list[dict]:
+    if source in SUPABASE_SOURCES:
+        meta = SUPABASE_SOURCES[source]
+        return _supabase_rows(meta["schema"], meta["table"], limit, q)
     if source == "asana":
         return _asana_rows(limit, q)
     if source == "files":
@@ -139,14 +209,28 @@ def sources():
         if sid == "products":
             item["tags"] = tags
         out.append(item)
+    for sid, meta in SUPABASE_SOURCES.items():
+        count = _supabase_count(meta["schema"], meta["table"])
+        out.append({"id": sid, "label": meta["label"], "columns": [], "groupable": [], "count": count})
     return out
 
 
 @router.get("/table")
 def table(source: str = "products", limit: int = 500, q: str = "", tag: str = ""):
-    if source not in SOURCES:
+    if source not in SOURCES and source not in SUPABASE_SOURCES:
         raise HTTPException(400, "Unknown source")
     rows = _get_rows(source, min(limit, 1000), q, tag)
+    if source in SUPABASE_SOURCES:
+        # Column list isn't fixed ahead of time for a live external table —
+        # derive it from whatever rows actually came back this call.
+        columns: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            for col in row.keys():
+                if col not in seen:
+                    seen.add(col)
+                    columns.append(col)
+        return {"source": source, "columns": columns, "rows": rows}
     return {"source": source, "columns": SOURCES[source]["columns"], "rows": rows}
 
 

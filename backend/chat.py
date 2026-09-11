@@ -85,8 +85,6 @@ def delete_doc(ref_id: str):
     return {"ok": True}
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-v4-flash"
-DEFAULT_PROVIDER = "deepseek"
 
 DEFAULT_SYSTEM_PROMPT = """You are Conductor Assistant, the user copilot running inside Conductor — a desktop workbench for Luminize (managing 80+ Amazon brands and multi-channel marketplaces).
 
@@ -121,10 +119,22 @@ def _load_config() -> dict:
             cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         except Exception:
             cfg = {}
+    provider = cfg.get("provider")
+    model = cfg.get("model")
+    if not provider or not model:
+        # No explicit selection saved yet — resolve through the spine's
+        # active-state layer (user config > preferred > default) instead of a
+        # locally hardcoded constant, so this can never drift out of sync with
+        # what providers.py actually declares for a given provider.
+        from spine.active import resolve_active_chat_target
+
+        resolved = resolve_active_chat_target(requested_provider=provider, requested_model=model)
+        provider = provider or resolved["provider"]
+        model = model or resolved["model"]
     return {
-        "provider": cfg.get("provider") or DEFAULT_PROVIDER,
+        "provider": provider,
         "base_url": (cfg.get("base_url") or DEFAULT_BASE_URL).rstrip("/"),
-        "model": cfg.get("model") or DEFAULT_MODEL,
+        "model": model,
         "api_key": cfg.get("api_key") or os.environ.get("DEEPSEEK_API_KEY", ""),
         "system_prompt": cfg.get("system_prompt") or DEFAULT_SYSTEM_PROMPT,
         "llama_system_prompt": cfg.get("llama_system_prompt") or DEFAULT_LLAMA_SYSTEM_PROMPT,
@@ -165,9 +175,9 @@ def _context_block() -> str:
 def get_config():
     cfg = _load_config()
     try:
-        from llama import list_models, server_status
+        from llama import discover_models, server_status
 
-        llama_models = list_models().get("models", [])
+        llama_models = discover_models().get("models", [])
         llama_status = server_status()
     except Exception:
         llama_models = []
@@ -182,7 +192,10 @@ def get_config():
         "llama_model": cfg["llama_model"],
         "llama_ctx": cfg["llama_ctx"],
         "llama_port": cfg["llama_port"],
-        "llama_models": [m["name"] for m in llama_models],
+        # `id` (bare filename, no extension) is the resolvable identifier — matches
+        # the Settings picker's <option value> (GET /api/llama/discover) and what
+        # llama.resolve_model() now knows how to find outside MODELS_DIR too.
+        "llama_models": [m["id"] for m in llama_models],
         "llama_running": llama_status.get("running", False),
         "llama_loaded": llama_status.get("model"),
     }
@@ -325,10 +338,29 @@ async def chat(body: dict):
         raise HTTPException(400, f"Model '{model}' is not available for provider '{provider}'.")
 
     def generate():
+        import itertools
+
         started = time.time()
         usage_obj = None
+        active_provider = provider
         try:
-            for ev in providers.stream_provider(provider, messages, model=model, api_key=api_key):
+            events = providers.stream_provider(active_provider, messages, model=model, api_key=api_key)
+            first = next(events, None)
+            if first is not None and first["type"] == "error":
+                # Outright failure before any text reached the user — retry once
+                # against the spine's configured fallback target rather than
+                # surfacing a bare error. A failure partway through a stream
+                # (after text has already been yielded) is never retried here;
+                # see the loop below, which only ever consumes `events` once.
+                from spine.active import resolve_fallback_target
+
+                fallback = resolve_fallback_target(exclude_provider=active_provider)
+                if fallback:
+                    yield f"[falling back to {fallback['provider']}/{fallback['model']}]\n"
+                    active_provider = fallback["provider"]
+                    events = providers.stream_provider(active_provider, messages, model=fallback["model"], api_key=None)
+                    first = next(events, None)
+            for ev in itertools.chain([first] if first is not None else [], events):
                 if ev["type"] == "text":
                     yield ev["text"]
                 elif ev["type"] == "thinking":
@@ -346,7 +378,7 @@ async def chat(body: dict):
                     output_tokens=usage_obj.get("completion_tokens") or 0,
                 )
             elapsed = time.time() - started
-            yield f"\n\n_({elapsed:.1f}s · {provider})_"
+            yield f"\n\n_({elapsed:.1f}s · {active_provider})_"
 
     return StreamingResponse(generate(), media_type="text/plain")
 
@@ -426,10 +458,24 @@ def list_all_models(provider: str | None = None, all_providers: bool = Query(Fal
     if not all_providers:
         if selected_provider == "llama":
             try:
-                from llama import list_models
+                from llama import discover_models
+                # discover_models() scans every known local install (Conductor's own
+                # models/, Ollama, LM Studio, Jan/Atomic Chat) — not just MODELS_DIR —
+                # so models installed outside Conductor are actually searchable here.
+                # `id` is what llama.resolve_model() now knows how to resolve for any
+                # of them (see llama.py's discovered-model fallback).
                 models = [
-                    {"id": m.get("name"), "provider": "llama", "providerId": "llama", "provider_label": "Local llama", "source": "local"}
-                    for m in list_models().get("models", []) if m.get("name")
+                    {
+                        "id": m.get("id"),
+                        "provider": "llama",
+                        "providerId": "llama",
+                        "provider_label": "Local llama",
+                        "source": "local",
+                        "sizeBytes": m.get("sizeBytes"),
+                        "sourceDir": m.get("sourceDir"),
+                        "kind": m.get("kind"),
+                    }
+                    for m in discover_models().get("models", []) if m.get("id")
                 ]
             except Exception:
                 models = []

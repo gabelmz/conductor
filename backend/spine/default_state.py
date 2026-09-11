@@ -1,11 +1,8 @@
-"""Conductor local-first application spine.
-
-The spine is the local source of truth for configuration metadata that should
-remain coherent across views: providers/models, presets, node library, feature
-registry, file types, statuses, lifecycles, datasets, and global filters.
-
-`conductor.*` in Supabase mirrors this shape when cloud sync is configured;
-secrets never enter the spine and stay in the local keychain/config store.
+"""Spine 'default state' — factory seed data: providers/models, node library,
+feature registry, file types, statuses, lifecycles, datasets, and global
+filters. Re-applied (idempotently, via ON CONFLICT DO UPDATE) every time
+init_spine_db() runs so a stale local install always catches up to the
+current shipped defaults.
 """
 from __future__ import annotations
 
@@ -15,11 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-
 import storage
-
-router = APIRouter(prefix="/api/spine", tags=["spine"])
 
 STATUS_DEFINITIONS = [
     ("draft", "Draft", "Created but not ready for normal use.", "lifecycle", "muted", 10),
@@ -87,80 +80,6 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def _decode(row: Any, json_columns: tuple[str, ...]) -> dict:
-    item = dict(row)
-    for key in json_columns:
-        try:
-            item[key] = json.loads(item.get(key) or ("[]" if key.endswith(("s", "ies")) else "{}"))
-        except (TypeError, json.JSONDecodeError):
-            item[key] = [] if key.endswith(("s", "ies")) else {}
-    return item
-
-
-def init_spine_db() -> None:
-    conn = storage._conn()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS spine_registry (
-          kind TEXT NOT NULL, registry_key TEXT NOT NULL, label TEXT NOT NULL,
-          description TEXT NOT NULL DEFAULT '', route TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '',
-          status_key TEXT NOT NULL DEFAULT 'active', lifecycle_key TEXT NOT NULL DEFAULT 'stable',
-          capabilities TEXT NOT NULL DEFAULT '[]', metadata TEXT NOT NULL DEFAULT '{}', source_hash TEXT NOT NULL DEFAULT '',
-          created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(kind, registry_key)
-        );
-        CREATE TABLE IF NOT EXISTS spine_status_definitions (
-          status_key TEXT PRIMARY KEY, label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL,
-          color_token TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
-          metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS spine_lifecycle_definitions (
-          lifecycle_key TEXT PRIMARY KEY, label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0,
-          terminal INTEGER NOT NULL DEFAULT 0, transitions TEXT NOT NULL DEFAULT '[]', metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS spine_file_type_definitions (
-          extension TEXT PRIMARY KEY, label TEXT NOT NULL, category TEXT NOT NULL, parse_handler TEXT NOT NULL DEFAULT '',
-          mime_types TEXT NOT NULL DEFAULT '[]', max_bytes INTEGER, enabled INTEGER NOT NULL DEFAULT 1,
-          metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS spine_model_catalog (
-          provider_id TEXT NOT NULL, model_id TEXT NOT NULL, label TEXT NOT NULL DEFAULT '', capabilities TEXT NOT NULL DEFAULT '[]',
-          context_window INTEGER, input_modalities TEXT NOT NULL DEFAULT '["text"]', output_modalities TEXT NOT NULL DEFAULT '["text"]',
-          is_embedding INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL,
-          PRIMARY KEY(provider_id, model_id)
-        );
-        CREATE TABLE IF NOT EXISTS spine_model_presets (
-          preset_key TEXT PRIMARY KEY, label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', provider_id TEXT NOT NULL, model_id TEXT NOT NULL,
-          system_prompt_key TEXT NOT NULL DEFAULT 'default', parameters TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1,
-          metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS spine_configurations (
-          config_scope TEXT NOT NULL, config_key TEXT NOT NULL, value TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1,
-          secret_refs TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL, PRIMARY KEY(config_scope, config_key)
-        );
-        CREATE TABLE IF NOT EXISTS spine_node_library (
-          node_type TEXT PRIMARY KEY, label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL, icon TEXT NOT NULL DEFAULT '',
-          input_schema TEXT NOT NULL DEFAULT '{}', output_schema TEXT NOT NULL DEFAULT '{}', config_schema TEXT NOT NULL DEFAULT '{}',
-          execution_mode TEXT NOT NULL DEFAULT 'local', lifecycle_key TEXT NOT NULL DEFAULT 'stable', enabled INTEGER NOT NULL DEFAULT 1,
-          metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS spine_node_presets (
-          preset_key TEXT PRIMARY KEY, node_type TEXT NOT NULL, label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', config TEXT NOT NULL DEFAULT '{}',
-          enabled INTEGER NOT NULL DEFAULT 1, metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS spine_datasets (
-          dataset_key TEXT PRIMARY KEY, label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', entity_type TEXT NOT NULL, source_type TEXT NOT NULL,
-          lifecycle_key TEXT NOT NULL DEFAULT 'active', freshness_seconds INTEGER, schema_definition TEXT NOT NULL DEFAULT '{}',
-          source_config TEXT NOT NULL DEFAULT '{}', metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS spine_global_filter_definitions (
-          filter_key TEXT PRIMARY KEY, label TEXT NOT NULL, entity_type TEXT NOT NULL, field_path TEXT NOT NULL, control_type TEXT NOT NULL,
-          options_source TEXT NOT NULL DEFAULT '{}', default_value TEXT, enabled INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0,
-          metadata TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-        );
-    """)
-    conn.commit()
-    seed_defaults()
-
-
 def seed_defaults() -> None:
     conn = storage._conn()
     now = storage.now_iso()
@@ -201,7 +120,7 @@ def _seed_registry(conn, now: str) -> None:
     Reading the canonical data-driven sidebar keeps the backend registry aligned
     with the live app without maintaining a duplicate Python list.
     """
-    nav_path = Path(__file__).resolve().parent.parent / "frontend" / "sidebar.js"
+    nav_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "sidebar.js"
     try:
         source = nav_path.read_text(encoding="utf-8")
     except OSError:
@@ -220,69 +139,3 @@ def _seed_registry(conn, now: str) -> None:
             "ON CONFLICT(kind,registry_key) DO UPDATE SET label=excluded.label,route=excluded.route,icon=excluded.icon,metadata=excluded.metadata,source_hash=excluded.source_hash,updated_at=excluded.updated_at",
             ("feature", item["id"], item["label"], "Conductor application feature.", item["view"], item["icon"], "active", "stable", "[]", _json(payload), digest, now, now),
         )
-
-
-@router.get("/snapshot")
-def snapshot() -> dict:
-    """Single local-first payload for glossary, model picker and global filters."""
-    conn = storage._conn()
-    return {
-        "registry": [_decode(r, ("capabilities", "metadata")) for r in conn.execute("SELECT * FROM spine_registry ORDER BY kind,label")],
-        "statuses": [_decode(r, ("metadata",)) for r in conn.execute("SELECT * FROM spine_status_definitions ORDER BY sort_order")],
-        "lifecycles": [_decode(r, ("transitions", "metadata")) for r in conn.execute("SELECT * FROM spine_lifecycle_definitions ORDER BY sort_order")],
-        "file_types": [_decode(r, ("mime_types", "metadata")) for r in conn.execute("SELECT * FROM spine_file_type_definitions ORDER BY category,label")],
-        "models": [_decode(r, ("capabilities", "input_modalities", "output_modalities", "metadata")) for r in conn.execute("SELECT * FROM spine_model_catalog WHERE is_active=1 ORDER BY provider_id,model_id")],
-        "model_presets": [_decode(r, ("parameters", "metadata")) for r in conn.execute("SELECT * FROM spine_model_presets WHERE enabled=1 ORDER BY label")],
-        "nodes": [_decode(r, ("input_schema", "output_schema", "config_schema", "metadata")) for r in conn.execute("SELECT * FROM spine_node_library WHERE enabled=1 ORDER BY category,label")],
-        "datasets": [_decode(r, ("schema_definition", "source_config", "metadata")) for r in conn.execute("SELECT * FROM spine_datasets ORDER BY label")],
-        "filters": [_decode(r, ("options_source", "default_value", "metadata")) for r in conn.execute("SELECT * FROM spine_global_filter_definitions WHERE enabled=1 ORDER BY sort_order")],
-    }
-
-
-@router.get("/glossary")
-def glossary(q: str = "", kind: str = "") -> dict:
-    query = q.strip().lower()
-    items = snapshot()["registry"]
-    if kind:
-        items = [x for x in items if x["kind"] == kind]
-    if query:
-        items = [x for x in items if query in (x["label"] + " " + x["description"] + " " + x["registry_key"]).lower()]
-    return {"count": len(items), "items": items}
-
-
-@router.get("/models")
-def models() -> dict:
-    data = snapshot()
-    return {"models": data["models"], "presets": data["model_presets"]}
-
-
-@router.get("/nodes")
-def nodes() -> dict:
-    return {"nodes": snapshot()["nodes"]}
-
-
-@router.get("/filters")
-def filters() -> dict:
-    return {"filters": snapshot()["filters"]}
-
-
-@router.put("/config/{scope}/{key}")
-def put_configuration(scope: str, key: str, body: dict) -> dict:
-    if "value" not in body:
-        raise HTTPException(400, "value is required")
-    # The payload deliberately supports only non-secret configuration.
-    value = body["value"]
-    secret_refs = body.get("secret_refs") or []
-    now = storage.now_iso()
-    conn = storage._conn()
-    conn.execute("INSERT INTO spine_configurations VALUES (?,?,?,?,?,?) ON CONFLICT(config_scope,config_key) DO UPDATE SET value=excluded.value,version=spine_configurations.version+1,secret_refs=excluded.secret_refs,updated_at=excluded.updated_at", (scope, key, _json(value), 1, _json(secret_refs), now))
-    conn.commit()
-    return {"ok": True, "scope": scope, "key": key}
-
-
-@router.get("/config/{scope}/{key}")
-def get_configuration(scope: str, key: str) -> dict:
-    r = storage._conn().execute("SELECT * FROM spine_configurations WHERE config_scope=? AND config_key=?", (scope, key)).fetchone()
-    if not r:
-        raise HTTPException(404, "configuration not found")
-    return _decode(r, ("value", "secret_refs"))

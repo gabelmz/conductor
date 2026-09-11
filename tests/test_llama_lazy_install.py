@@ -20,6 +20,7 @@ import chat
 import hf
 import llama
 import storage
+from spine.schema import init_tables
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +29,7 @@ def setup_temp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "DATA_DIR", tmp_path)
     storage._local = threading.local()
     storage.init_db()
+    init_tables()
     monkeypatch.setattr(chat, "CONFIG_PATH", tmp_path / "chat.json")
     hf._downloads.clear()
     yield tmp_path

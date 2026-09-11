@@ -79,7 +79,14 @@ def _find_running_server() -> int | None:
 
 
 def resolve_model(name: str) -> Path:
-    """Resolve a model name (filename in models/, or absolute path) to a file."""
+    """Resolve a model name (filename in models/, an absolute path, or an id/filename
+    surfaced by discover_models() from any known local install) to a file.
+
+    The Settings picker (GET /api/llama/discover) already lists GGUFs found in Ollama,
+    LM Studio, and Jan/Atomic Chat stores, keyed by their bare `id` — without this
+    fallback, picking one of those always 404'd because only MODELS_DIR was ever
+    searched, even though the picker itself made them look selectable.
+    """
     name = (name or "").strip()
     if not name:
         raise HTTPException(400, "No model selected — pick a GGUF in Settings → AI Chat → Local Llama.")
@@ -95,7 +102,16 @@ def resolve_model(name: str) -> Path:
     candidate = MODELS_DIR / f"{name}.gguf"
     if candidate.exists():
         return candidate
-    raise HTTPException(404, f"Model '{name}' not found in {MODELS_DIR}")
+    # Not in Conductor's own folder — search every known local install (Ollama, LM
+    # Studio, Jan/Atomic Chat) by id or filename before giving up.
+    for model in discover_models()["models"]:
+        if model["id"] == name or Path(model["path"]).name == name:
+            return Path(model["path"])
+    raise HTTPException(
+        404,
+        f"Model '{name}' not found in {MODELS_DIR} or any discovered local install "
+        "(Ollama, LM Studio, Jan). Try Settings → AI Chat → Local Llama → Refresh.",
+    )
 
 
 # --------------------------------------------------------------------------

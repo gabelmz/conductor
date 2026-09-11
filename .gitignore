@@ -6,6 +6,10 @@ __pycache__/
 # Runtime data (db, configs, logs, keys, uploads) — regenerated locally, never commit
 data/
 
+# Secrets — never commit
+.env
+.env.*
+
 # Node / Electron
 node_modules/
 desktop/parker.asar

@@ -1,12 +1,38 @@
+from __future__ import annotations
+
+import sys
+import threading
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR / "backend"))
+
+import storage
 from main import app
 
 
-client = TestClient(app)
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    # Isolated from the real data/conductor.db — this file previously wrote
+    # directly to it via the shared `main.app` instance (no fixture at all),
+    # so every local test run silently bumped a real spine_configurations row
+    # (scope='chat', key='default') and, once backend/spine_sync.py existed,
+    # pushed that test artifact into the live conductor.* Supabase mirror too.
+    monkeypatch.setattr(storage, "DB_PATH", tmp_path / "test_conductor.db")
+    monkeypatch.setattr(storage, "DATA_DIR", tmp_path)
+    storage._local = threading.local()
+    storage.init_db()
+    from spine.schema import init_tables
+    from spine.default_state import seed_defaults
+    init_tables()
+    seed_defaults()
+    return TestClient(app)
 
 
-def test_spine_snapshot_exposes_local_first_catalog():
+def test_spine_snapshot_exposes_local_first_catalog(client):
     response = client.get("/api/spine/snapshot")
     assert response.status_code == 200
     snapshot = response.json()
@@ -21,7 +47,7 @@ def test_spine_snapshot_exposes_local_first_catalog():
     }
 
 
-def test_spine_configuration_never_requires_a_secret_value():
+def test_spine_configuration_never_requires_a_secret_value(client):
     body = {"value": {"default_model_preset": "openai-default"}, "secret_refs": ["provider-key:openai"]}
     saved = client.put("/api/spine/config/chat/default", json=body)
     assert saved.status_code == 200
@@ -32,7 +58,7 @@ def test_spine_configuration_never_requires_a_secret_value():
     assert loaded.json()["secret_refs"] == body["secret_refs"]
 
 
-def test_spine_glossary_filters_local_registry():
+def test_spine_glossary_filters_local_registry(client):
     response = client.get("/api/spine/glossary", params={"q": "Keepa", "kind": "feature"})
     assert response.status_code == 200
     assert response.json()["count"] >= 1

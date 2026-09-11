@@ -192,6 +192,40 @@ def api_get(headers: dict, path: str, params: dict | None = None) -> dict:
     raise RuntimeError(f"Exceeded {MAX_RETRIES} retries on 429/5xx for {url}")
 
 
+def api_post(headers: dict, path: str, body: dict) -> dict:
+    """POST with the same 429/5xx retry/backoff as api_get.
+
+    Task creation and comment posting used to bypass this entirely via a bare
+    urllib POST in main.py (guarded by a `hasattr(asana_sync, "api_post")`
+    check that was always False since this function never existed) — under
+    load that meant those two write paths could trip Asana's 429s with no
+    backoff at all, unlike every read call in this module.
+    """
+    url = f"{BASE_URL}{path}" if path.startswith("/") else path
+    payload = json.dumps(body).encode("utf-8")
+    post_headers = {**headers, "Content-Type": "application/json"}
+    for attempt in range(1, MAX_RETRIES + 1):
+        req = urllib.request.Request(url, data=payload, headers=post_headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                retry_after = int(e.headers.get("Retry-After", "5"))
+                time.sleep(retry_after + attempt)
+                continue
+            if e.code >= 500:
+                time.sleep(2 * attempt)
+                continue
+            detail = e.read(300).decode("utf-8", errors="replace")
+            raise RuntimeError(f"Asana API {e.code}: {detail}")
+        except urllib.error.URLError as e:
+            time.sleep(2 * attempt)
+            if attempt == MAX_RETRIES:
+                raise RuntimeError(f"Asana API unreachable: {e}")
+    raise RuntimeError(f"Exceeded {MAX_RETRIES} retries on 429/5xx for {url}")
+
+
 def paginate(headers: dict, path: str, params: dict | None = None) -> list[dict]:
     """Paginate an Asana list endpoint (offset tokens), returning all items."""
     items: list[dict] = []

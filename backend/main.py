@@ -754,18 +754,7 @@ def asana_create_task(body: dict):
         raise HTTPException(400, "Asana PAT not configured")
     headers = asana_sync._headers()
     data = body.get("data") or body
-    res = asana_sync.api_post(headers, "/tasks", {"data": data}) if hasattr(asana_sync, "api_post") else None
-    if not res:
-        # Fallback post using urllib
-        req = urllib.request.Request(
-            f"{asana_sync.BASE_URL}/tasks",
-            data=json.dumps({"data": data}).encode("utf-8"),
-            headers={**headers, "Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=30) as r:
-            res = json.loads(r.read().decode("utf-8"))
-    return res
+    return asana_sync.api_post(headers, "/tasks", {"data": data})
 
 
 @app.post("/api/asana/tasks/{gid}/comments")
@@ -779,14 +768,7 @@ def asana_add_comment(gid: str, body: dict):
     text = str(body.get("text") or "").strip()
     if not text:
         raise HTTPException(400, "text is required")
-    req = urllib.request.Request(
-        f"{asana_sync.BASE_URL}/tasks/{gid}/stories",
-        data=json.dumps({"data": {"text": text}}).encode("utf-8"),
-        headers={**headers, "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode("utf-8"))
+    return asana_sync.api_post(headers, f"/tasks/{gid}/stories", {"data": {"text": text}})
 
 
 @app.get("/api/asana/summary")
