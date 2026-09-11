@@ -1,5 +1,7 @@
 # Python
 .venv/
+.venv-portable/
+.portable-python-tmp/
 __pycache__/
 *.pyc
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.5.5 - 2026-09-11
+
+### Critical: Installer Never Actually Ran For Anyone
+
+- The bundled backend Python was a plain `venv`, whose `python.exe` is a thin launcher that refuses to start unless the exact absolute path to the base interpreter it was created from ("home" in `pyvenv.cfg`) exists on the machine running it. Every CI-published release through v2.5.4 built that venv from the GitHub Actions runner's own ephemeral toolcache Python — a path that no longer exists once the CI job ends, let alone on any user's machine. This means the installer could never have started its backend for anyone downloading a release, going back to the first published build. Confirmed directly against a real install on a real machine, not inferred.
+- Replaced the bundled venv with Python's official self-contained embeddable distribution (`scripts/build-portable-python.mjs`), which has no external path dependency at all. Verified end-to-end: built it, packaged it, installed the resulting NSIS installer for real, launched the real installed app, and confirmed the backend actually answers `/api/health` with real data.
+- Added a build-time check (`afterpack-verify-python.cjs`) that now fails the build outright if a `pyvenv.cfg` (i.e. a non-portable venv) ever shows up in the bundle again, and confirms the bundled Python can actually import `fastapi`/`uvicorn` before packaging finishes.
+
 ## v2.5.4 - 2026-09-11
 
 ### Reliability

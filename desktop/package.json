@@ -1,7 +1,7 @@
 {
   "name": "conductor",
   "productName": "Conductor",
-  "version": "2.5.4",
+  "version": "2.5.5",
   "private": true,
   "description": "Conductor — business process automation hub with AI workflows (desktop)",
   "main": "main.cjs",
@@ -66,7 +66,7 @@
         ]
       },
       {
-        "from": "../.venv",
+        "from": "../.venv-portable",
         "to": "venv",
         "filter": [
           "**/*",

@@ -29,10 +29,18 @@ function findBackend() {
   const devRoot = path.join(__dirname, ".."); // dev layout: desktop/ + backend/
 
   const candidates = [
-    // packaged: <root>/venv/Scripts/python.exe
+    // packaged, portable-python layout: <resources>/venv/python.exe — a self-
+    // contained Python embeddable distribution (see scripts/build-portable-
+    // python.mjs), not a venv, so python.exe sits directly in venv/ with no
+    // Scripts/ subfolder. This is the primary packaged layout; check it first.
+    path.join(appRoot, "venv", "python.exe"),
+    path.join(devRoot, "venv", "python.exe"),
+    // legacy packaged venv layout (kept for compatibility with any build
+    // that still bundled a plain venv instead of the portable distribution)
     path.join(appRoot, "venv", "Scripts", "python.exe"),
     path.join(appRoot, ".venv", "Scripts", "python.exe"),
-    // dev: compliance-agent/.venv/Scripts/python.exe
+    // dev: repo-root .venv — a real venv used only for local development,
+    // never packaged
     path.join(devRoot, ".venv", "Scripts", "python.exe"),
     path.join(devRoot, "venv", "Scripts", "python.exe"),
   ];
@@ -104,6 +112,55 @@ function killBackend() {
   }
 }
 
+// Import names for requirements.txt's direct dependencies — a PyPI package
+// name doesn't always match what you `import` (python-docx -> docx,
+// python-multipart -> multipart). Keep this in sync with requirements.txt.
+const REQUIRED_IMPORTS = [
+  "fastapi", "uvicorn", "multipart", "requests", "openpyxl", "mcp",
+  "docx", "pdfplumber", "pyxlsb",
+];
+
+// Self-heals a bundled venv that's missing a package requirements.txt
+// declares (e.g. requirements.txt gained an entry after this machine's copy
+// of the app was packaged, or a prior install was interrupted/corrupted).
+// A quick import probe is the common, fast path; `pip install -r
+// requirements.txt` only runs when that probe actually fails.
+function ensureBackendDependencies(backend) {
+  const probe = spawnSync(
+    backend.python,
+    ["-c", `import ${REQUIRED_IMPORTS.join(", ")}`],
+    { windowsHide: true },
+  );
+  if (probe.status === 0) return;
+
+  loadStatus("Installing required components…");
+  const requirementsPath = path.join(backend.appRoot, "requirements.txt");
+  if (!fs.existsSync(requirementsPath)) {
+    throw new Error(
+      `Required Python packages are missing and requirements.txt was not found at ${requirementsPath} to install them from.`,
+    );
+  }
+  const install = spawnSync(
+    backend.python,
+    ["-m", "pip", "install", "-r", requirementsPath, "--disable-pip-version-check", "--no-input"],
+    { windowsHide: true },
+  );
+  if (install.status !== 0) {
+    const detail = (install.stderr?.toString("utf-8") || install.stdout?.toString("utf-8") || "").trim().slice(-2000);
+    throw new Error(`Failed to install required Python packages.${detail ? "\npip output:\n" + detail : ""}`);
+  }
+
+  const recheck = spawnSync(
+    backend.python,
+    ["-c", `import ${REQUIRED_IMPORTS.join(", ")}`],
+    { windowsHide: true },
+  );
+  if (recheck.status !== 0) {
+    const detail = (recheck.stderr?.toString("utf-8") || "").trim().slice(-1000);
+    throw new Error(`Required Python packages are still missing after installation.${detail ? "\n" + detail : ""}`);
+  }
+}
+
 async function startBackend() {
   const backend = findBackend();
   if (!backend) {
@@ -114,6 +171,7 @@ async function startBackend() {
     app.quit();
     return null;
   }
+  ensureBackendDependencies(backend);
   backendPort = await findFreePort();
 
   const env = { ...process.env, CONDUCTOR_ELECTRON_EXE: process.execPath };

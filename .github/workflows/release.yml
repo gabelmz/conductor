@@ -24,11 +24,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Create packaged backend environment
-        run: |
-          python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install --upgrade pip
-          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+      - name: Build portable backend Python environment
+        # A plain `venv` is not portable — its python.exe needs the exact
+        # base-interpreter path it was created from to exist on whatever
+        # machine runs it. On this runner that path is an ephemeral
+        # per-job toolcache directory that is gone once this job ends, so a
+        # venv built here could never have worked for anyone downloading the
+        # release. scripts/build-portable-python.mjs bundles Python's
+        # official self-contained embeddable distribution instead.
+        run: node scripts/build-portable-python.mjs .venv-portable
 
       - name: Install desktop dependencies
         run: |
