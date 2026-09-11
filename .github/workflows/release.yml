@@ -39,6 +39,27 @@ jobs:
           cd desktop
           npm ci
 
+      - name: Ensure GitHub release exists
+        # electron-builder's own "create the release if it doesn't exist yet"
+        # check races itself when it uploads multiple artifacts (exe +
+        # blockmap) in parallel: both uploads independently see no release
+        # for the tag and both try to create one. Confirmed in v2.5.5's
+        # actual run logs — two near-simultaneous "creating GitHub release"
+        # lines for the same tag, after which the installer's own upload
+        # never got confirmed (only the small blockmap made it). Creating
+        # the release up front, sequentially, before electron-builder starts
+        # uploading anything, removes the race entirely.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          gh release view "$env:GITHUB_REF_NAME" --repo gabelmz/conductor 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "$env:GITHUB_REF_NAME" --repo gabelmz/conductor `
+              --title "$env:GITHUB_REF_NAME" --notes "Automated release for $env:GITHUB_REF_NAME" `
+              --target $env:GITHUB_SHA
+          }
+
       - name: Build and Publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

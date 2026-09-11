@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.5.6 - 2026-09-11
+
+### Release Pipeline
+
+- Fixed a race in the release workflow where electron-builder's parallel artifact uploads (installer + blockmap) each independently tried to create the GitHub release for a new tag, and only the smaller file's upload was confirmed in v2.5.5's actual run — the installer itself never got attached. The workflow now creates the release explicitly, once, before electron-builder uploads anything. (v2.5.5's release on GitHub is incomplete/missing its installer as a result — superseded by this one.)
+
 ## v2.5.5 - 2026-09-11
 
 ### Critical: Installer Never Actually Ran For Anyone
