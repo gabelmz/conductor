@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.5.2 - 2026-09-11
+
+### Desktop Reliability
+
+- Fixed a crash-on-launch race in the Electron main process: if the bundled backend process exited quickly (or lost its exit race with the readiness poll), the main process read `.exitCode` off a shared variable its own exit handler had already set to `null`, throwing "Cannot read properties of null (reading 'exitCode')" instead of showing the actual backend failure reason. It now reads from the stable per-launch process reference, so a real failure now shows its real cause.
+
 ## v2.5.1 - 2026-09-10
 
 ### Data Management

@@ -169,7 +169,7 @@ async function startBackend() {
   const deadline = startedAt + 90000;
   let stage = 0;
   while (Date.now() < deadline) {
-    if (backendProc.exitCode !== null) break; // died — fail fast, log below
+    if (child.exitCode !== null) break; // died — fail fast, log below
     try {
       const res = await fetch(`http://127.0.0.1:${backendPort}/api/health`);
       if (res.ok) return backendPort;
@@ -193,8 +193,8 @@ async function startBackend() {
   }
   const tail = logTail.join("").trim().split("\n").slice(-12).join("\n");
   const detail =
-    backendProc.exitCode !== null ?
-      `Backend process exited with code ${backendProc.exitCode}.${tail ? "\nLast log lines:\n" + tail : ""}`
+    child.exitCode !== null ?
+      `Backend process exited with code ${child.exitCode}.${tail ? "\nLast log lines:\n" + tail : ""}`
     : `Backend did not answer /api/health on port ${backendPort} within 90s.${tail ? "\nLast log lines:\n" + tail : ""}`;
   throw new Error(detail);
 }
