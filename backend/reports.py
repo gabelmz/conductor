@@ -175,23 +175,76 @@ def generate_cdq() -> dict:
 # --------------------------------------------------------------------------
 # CRUD
 # --------------------------------------------------------------------------
+def _report_parameters(value: object) -> dict:
+    """Keep report filters explicit and reject ambiguous or inverted ranges."""
+    if value is None:
+        params = {}
+    elif not isinstance(value, dict):
+        raise HTTPException(400, "parameters must be an object")
+    else:
+        params = value
+    allowed = {"date", "dateFrom", "dateTo", "latestOnly", "dataType", "sourceId", "reportKind"}
+    clean = {key: params[key] for key in allowed if key in params and params[key] is not None}
+    if "latestOnly" in clean and not isinstance(clean["latestOnly"], bool):
+        raise HTTPException(400, "parameters.latestOnly must be a boolean")
+    if clean.get("dateFrom") and clean.get("dateTo") and str(clean["dateFrom"]) > str(clean["dateTo"]):
+        raise HTTPException(400, "parameters.dateFrom cannot be after parameters.dateTo")
+    return clean
+
+
 def _row_to_report(row) -> dict:
     d = dict(row)
     d["data"] = json.loads(d.get("data") or "{}")
     d["meta"] = json.loads(d.get("meta") or "{}")
+    meta = d["meta"]
+    source_kind = meta.get("source") or "stored"
+    parameters = meta.get("parameters") if isinstance(meta.get("parameters"), dict) else {}
+    d.update({
+        "schemaVersion": 1,
+        "type": d["kind"],
+        "createdAt": d["created_at"],
+        "updatedAt": meta.get("updated_at") or d["created_at"],
+        "source": {"kind": source_kind, "system": "sqlite", "dataset": meta.get("dataset") or "products"},
+        "parameters": parameters,
+        "summary": d["data"].get("kpis", {}) if isinstance(d["data"], dict) else {},
+        "renderHints": meta.get("render_hints") or {},
+        "actions": ["view", "refresh", "replace", "delete", "rerun"],
+    })
     return d
 
 
 @router.get("")
-def list_reports():
+def list_reports(
+    kind: str | None = None,
+    source: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    latest_only: bool = False,
+):
     rows = storage._conn().execute(
-        "SELECT id, kind, title, meta, created_at FROM reports ORDER BY id DESC LIMIT 100"
+        "SELECT id, kind, title, meta, data, created_at FROM reports ORDER BY id DESC LIMIT 100"
     ).fetchall()
     out = []
     for r in rows:
-        d = dict(r)
-        d["meta"] = json.loads(d.get("meta") or "{}")
-        out.append(d)
+        report = _row_to_report(r)
+        if kind and report["type"] != kind:
+            continue
+        if source and report["source"]["kind"] != source:
+            continue
+        if date_from and report["createdAt"] < date_from:
+            continue
+        if date_to and report["createdAt"] > date_to:
+            continue
+        out.append(report)
+    if latest_only:
+        seen: set[tuple[str, str]] = set()
+        latest = []
+        for report in out:
+            key = (report["type"], report["source"]["kind"])
+            if key not in seen:
+                latest.append(report)
+                seen.add(key)
+        out = latest
     return {"reports": out}
 
 
@@ -203,24 +256,67 @@ def get_report(report_id: int):
     return {"report": _row_to_report(row)}
 
 
-@router.post("/generate")
-def generate_report(body: dict):
-    kind = str(body.get("kind") or "cdq")
+def _generate_report(kind: str, title: str, parameters: dict, lineage: dict | None = None) -> dict:
     if kind != "cdq":
-        raise HTTPException(400, f"Unknown report kind '{kind}' — only 'cdq' is available")
-    title = str(body.get("title") or "").strip() or "CDQ Analysis"
+        raise HTTPException(400, f"Unknown report kind '{kind}'; only 'cdq' is available")
     data = generate_cdq()
-    meta = {"generated_at": storage.now_iso(), "source": "live", "kind": kind,
-            "asin_count": data["kpis"]["total_asins"],
-            "brand_count": data["kpis"]["brands"]}
+    stamp = storage.now_iso()
+    meta = {
+        "generated_at": stamp,
+        "updated_at": stamp,
+        "source": "live",
+        "kind": kind,
+        "dataset": "products",
+        "parameters": parameters,
+        "asin_count": data["kpis"]["total_asins"],
+        "brand_count": data["kpis"]["brands"],
+    }
+    if lineage:
+        meta.update(lineage)
     conn = storage._conn()
     cur = conn.execute(
         "INSERT INTO reports (kind, title, meta, data, created_at) VALUES (?,?,?,?,?)",
-        (kind, title, json.dumps(meta), json.dumps(data), storage.now_iso()),
+        (kind, title, json.dumps(meta), json.dumps(data), stamp),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM reports WHERE id=?", (cur.lastrowid,)).fetchone()
     return {"report": _row_to_report(row)}
+
+
+@router.post("/generate")
+def generate_report(body: dict):
+    kind = str(body.get("kind") or "cdq")
+    title = str(body.get("title") or "").strip() or "CDQ Analysis"
+    return _generate_report(kind, title, _report_parameters(body.get("parameters")))
+
+
+@router.post("/{report_id}/rerun")
+def rerun_report(report_id: int, body: dict | None = None):
+    row = storage._conn().execute("SELECT * FROM reports WHERE id=?", (report_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Report not found")
+    report = _row_to_report(row)
+    body = body or {}
+    parameters = {**report["parameters"], **_report_parameters(body.get("parameters"))}
+    title = str(body.get("title") or report["title"]).strip() or report["title"]
+    return _generate_report(report["type"], title, parameters, {"rerun_of": report_id})
+
+
+@router.post("/{report_id}/replace")
+def replace_report(report_id: int, body: dict | None = None):
+    row = storage._conn().execute("SELECT * FROM reports WHERE id=?", (report_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Report not found")
+    report = _row_to_report(row)
+    body = body or {}
+    parameters = {**report["parameters"], **_report_parameters(body.get("parameters"))}
+    title = str(body.get("title") or report["title"]).strip() or report["title"]
+    result = _generate_report(report["type"], title, parameters, {"replaces": report_id})
+    meta = {**report["meta"], "replaced_by": result["report"]["id"], "updated_at": storage.now_iso()}
+    conn = storage._conn()
+    conn.execute("UPDATE reports SET meta=? WHERE id=?", (json.dumps(meta), report_id))
+    conn.commit()
+    return result
 
 
 @router.delete("/{report_id}")

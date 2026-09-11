@@ -73,6 +73,7 @@ window.ConductorData = {
     products: () => window.api('/api/products?limit=300'),
     checks:   () => window.api('/api/checks/summary'),
     people:   () => window.api('/api/people'),
+    reports:  () => window.api('/api/reports'),
   },
   get(key, opts) {
     const fn = this.sources[key];

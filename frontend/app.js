@@ -3584,11 +3584,13 @@ function vvValidate(root) {
 /* ================================================================
    Reports — management page + CDQ dashboard
    ================================================================ */
+let reportsViewMode = "gallery";
+
 async function renderReports() {
   const root = $("#view-root");
   let list = [];
   try {
-    list = (await api("/api/reports")).reports || [];
+    list = (await ConductorData.get("reports", { force: true })).reports || [];
   } catch {
     /* */
   }
@@ -3603,11 +3605,25 @@ async function renderReports() {
         <td><span class="chip-kind k-enrichment">${esc(r.kind)}</span></td>
         <td class="mono">${r.meta && r.meta.asin_count != null ? fmtNum(r.meta.asin_count) : "—"}</td>
         <td>${fmtTime(r.created_at)}</td>
-        <td><button class="btn-mini" data-view-report="${r.id}">View</button> <button class="btn-mini btn-mini-danger" data-del-report="${r.id}">Delete</button></td>
+        <td><button class="btn-mini" data-view-report="${r.id}">View</button> <button class="btn-mini" data-rerun-report="${r.id}">Rerun</button> <button class="btn-mini btn-mini-danger" data-del-report="${r.id}">Delete</button></td>
       </tr>`,
         )
         .join("")
     : `<tr><td colspan="6" class="vv-empty">No reports yet — generate a CDQ Analysis to get started.</td></tr>`;
+  const cards = list.length
+    ? list
+        .map(
+          (r) => `
+        <article class="cdq-card" style="min-width:14rem;flex:1;margin:0">
+          <div class="section-title">${esc(r.title)}</div>
+          <div class="view-sub"><span class="chip-kind k-enrichment">${esc(r.type || r.kind)}</span> · ${esc(r.source?.kind || r.meta?.source || "stored")}</div>
+          <div class="mono" style="margin:0.7rem 0">${r.summary?.total_asins != null ? fmtNum(r.summary.total_asins) + " ASINs" : "No summary"}</div>
+          <div class="view-sub">${fmtTime(r.createdAt || r.created_at)}</div>
+          <div class="settings-actions" style="margin-top:0.75rem"><button class="btn-mini" data-view-report="${r.id}">View</button><button class="btn-mini" data-rerun-report="${r.id}">Rerun</button><button class="btn-mini btn-mini-danger" data-del-report="${r.id}">Delete</button></div>
+        </article>`,
+        )
+        .join("")
+    : `<div class="vv-empty">No reports yet — generate a CDQ Analysis to get started.</div>`;
   root.innerHTML = `
     <div class="view">
       <div class="view-header">
@@ -3619,9 +3635,15 @@ async function renderReports() {
           <button class="btn-primary" id="rpt-generate"><span class="codicon codicon-graph"></span> Generate CDQ Analysis</button>
         </div>
       </div>
-      <div class="view-sub" style="margin:0 0 0.5rem">Reports</div>
-      <table class="data-table"><thead><tr><th>#</th><th>Title</th><th>Kind</th><th>ASINs</th><th>Generated</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="view-actions" style="margin:0 0 0.5rem"><span class="view-sub">Reports</span><button class="btn-mini${reportsViewMode === "gallery" ? " active" : ""}" data-rpt-view="gallery">Gallery</button><button class="btn-mini${reportsViewMode === "list" ? " active" : ""}" data-rpt-view="list">List</button></div>
+      ${reportsViewMode === "gallery" ? `<div class="cdq-grid">${cards}</div>` : `<table class="data-table"><thead><tr><th>#</th><th>Title</th><th>Kind</th><th>ASINs</th><th>Generated</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
     </div>`;
+  root.querySelectorAll("[data-rpt-view]").forEach((button) =>
+    button.addEventListener("click", () => {
+      reportsViewMode = button.dataset.rptView;
+      renderReports();
+    }),
+  );
   root.querySelector("#rpt-generate").addEventListener("click", async () => {
     const btn = root.querySelector("#rpt-generate");
     btn.disabled = true;
@@ -3631,6 +3653,7 @@ async function renderReports() {
         method: "POST",
         body: { kind: "cdq" },
       });
+      ConductorData.invalidate("reports");
       toast(`CDQ Analysis generated`, "ok");
       renderCdqReport(res.report, root);
     } catch (e) {
@@ -3653,10 +3676,23 @@ async function renderReports() {
     b.addEventListener("click", async () => {
       try {
         await api(`/api/reports/${b.dataset.delReport}`, { method: "DELETE" });
+        ConductorData.invalidate("reports");
         toast("Report deleted", "ok");
         renderReports();
       } catch (e) {
         toast(`Delete failed: ${e.message}`, "err");
+      }
+    }),
+  );
+  root.querySelectorAll("[data-rerun-report]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        const res = await api(`/api/reports/${b.dataset.rerunReport}/rerun`, { method: "POST", body: {} });
+        ConductorData.invalidate("reports");
+        toast("Report rerun", "ok");
+        renderCdqReport(res.report, root);
+      } catch (e) {
+        toast(`Rerun failed: ${e.message}`, "err");
       }
     }),
   );

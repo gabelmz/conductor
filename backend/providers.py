@@ -677,6 +677,73 @@ def registry() -> dict[str, object]:
     return out
 
 
+def list_provider_models(provider_id: str) -> tuple[list[dict], str]:
+    """Return one provider's normalized model catalog without exposing keys.
+
+    A configured adapter is authoritative when it can enumerate models.  A
+    curated default keeps the picker useful when discovery is unavailable or a
+    provider has not been configured yet.
+    """
+    if provider_id not in HOSTED_PROVIDERS:
+        raise ValueError(f"Unknown provider '{provider_id}'")
+
+    cfg = read_provider_config(provider_id)
+    if cfg.get("enabled") is False:
+        return [], "disabled"
+    default_model = cfg.get("defaultModelId") or HOSTED_PROVIDERS[provider_id]["default_model"]
+    adapter = build_adapter(provider_id, resolve_api_key(provider_id))
+    source = "local" if provider_id in ("ollama", "lmstudio") else "provider-api"
+    raw_models: list[dict] = []
+    if adapter:
+        try:
+            raw_models = adapter.list_models() or []
+        except Exception:
+            raw_models = []
+    if not raw_models:
+        raw_models = [{"id": default_model, "providerId": provider_id}]
+        source = "curated"
+
+    seen: set[str] = set()
+    models: list[dict] = []
+    for raw in raw_models:
+        model_id = str(raw.get("id") or "").strip() if isinstance(raw, dict) else ""
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append({
+            "id": model_id,
+            "providerId": provider_id,
+            "label": str(raw.get("label") or model_id) if isinstance(raw, dict) else model_id,
+            "source": source,
+        })
+    return models, source
+
+
+def model_is_allowed(provider_id: str, model_id: str) -> bool:
+    """Reject known cross-provider selections before sending a chat request.
+
+    If a provider is configured, its discovered catalog is authoritative.  With
+    no configured adapter, preserve manually entered provider-native model IDs,
+    but still reject defaults that are known to belong to another provider.
+    """
+    if provider_id not in HOSTED_PROVIDERS:
+        return False
+    candidate = str(model_id or "").strip()
+    if not candidate:
+        return True
+    models, _source = list_provider_models(provider_id)
+    if any(model["id"] == candidate for model in models):
+        return True
+    if build_adapter(provider_id, resolve_api_key(provider_id)):
+        return False
+    foreign_defaults = {
+        meta["default_model"]
+        for pid, meta in HOSTED_PROVIDERS.items()
+        if pid != provider_id
+    }
+    return candidate not in foreign_defaults
+
+
 def available_providers() -> list[dict]:
     """UI-facing list: every known provider with config, key presence, models."""
     reg = registry()

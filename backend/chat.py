@@ -20,7 +20,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 
 from storage import DATA_DIR
@@ -193,8 +193,6 @@ def set_config(body: dict):
     cfg = _load_config()
     if "api_key" in body and body.get("api_key"):
         cfg["api_key"] = str(body["api_key"]).strip()
-    if body.get("model"):
-        cfg["model"] = str(body["model"]).strip()
     if body.get("base_url"):
         cfg["base_url"] = str(body["base_url"]).strip().rstrip("/")
     if "system_prompt" in body:
@@ -205,6 +203,14 @@ def set_config(body: dict):
 
     if body.get("provider") in providers_mod.HOSTED_PROVIDERS or body.get("provider") == "llama":
         cfg["provider"] = str(body["provider"])
+    requested_model = str(body.get("model") or "").strip()
+    if requested_model:
+        if cfg["provider"] != "llama" and not providers_mod.model_is_allowed(cfg["provider"], requested_model):
+            raise HTTPException(400, f"Model '{requested_model}' is not available for provider '{cfg['provider']}'.")
+        cfg["model"] = requested_model
+    elif cfg["provider"] != "llama" and not providers_mod.model_is_allowed(cfg["provider"], cfg.get("model") or ""):
+        # Do not retain a known model from the previously selected provider.
+        cfg["model"] = providers_mod.read_provider_config(cfg["provider"]).get("defaultModelId") or providers_mod.HOSTED_PROVIDERS[cfg["provider"]]["default_model"]
     # LAW-style per-provider patches: {providers: {pid: {mode, baseUrl, defaultModelId, enabled}}}
     prov_patches = body.get("providers")
     if isinstance(prov_patches, dict):
@@ -315,6 +321,8 @@ async def chat(body: dict):
 
     if provider not in providers.HOSTED_PROVIDERS:
         raise HTTPException(400, f"Unknown provider '{provider}' — choose one of {', '.join(providers.HOSTED_PROVIDERS)} or 'llama'.")
+    if model and not providers.model_is_allowed(provider, model):
+        raise HTTPException(400, f"Model '{model}' is not available for provider '{provider}'.")
 
     def generate():
         started = time.time()
@@ -409,9 +417,32 @@ def delete_key(provider_id: str):
 
 
 @router.get("/models")
-def list_all_models():
-    """List models available across all registered providers."""
+def list_all_models(provider: str | None = None, all_providers: bool = Query(False, alias="all")):
+    """List models for the selected provider, or all configured providers with `?all=true`."""
     import providers
+
+    cfg = _load_config()
+    selected_provider = str(provider or cfg.get("provider") or "deepseek")
+    if not all_providers:
+        if selected_provider == "llama":
+            try:
+                from llama import list_models
+                models = [
+                    {"id": m.get("name"), "provider": "llama", "providerId": "llama", "provider_label": "Local llama", "source": "local"}
+                    for m in list_models().get("models", []) if m.get("name")
+                ]
+            except Exception:
+                models = []
+            return {"providerId": "llama", "models": models, "source": "local"}
+        try:
+            catalog, source = providers.list_provider_models(selected_provider)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        models = [
+            {**model, "provider": selected_provider, "provider_label": providers.HOSTED_PROVIDERS[selected_provider]["label"]}
+            for model in catalog
+        ]
+        return {"providerId": selected_provider, "models": models, "source": source}
 
     models = []
     for p in providers.available_providers():
@@ -422,7 +453,7 @@ def list_all_models():
                     "provider": p["id"],
                     "provider_label": p["label"],
                 })
-    return {"models": models}
+    return {"providerId": None, "models": models, "source": "all-configured"}
 
 
 @router.post("/embeddings")
