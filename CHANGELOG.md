@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.5.4 - 2026-09-11
+
+### Reliability
+
+- Added the missing `python-docx`, `pdfplumber`, and `pyxlsb` dependencies to `requirements.txt` — used by `.docx`/`.pdf`/`.xlsb` catalog parsing but never declared, so a freshly built (CI) install was missing them even though a long-lived local dev environment already had them installed from unrelated prior work. `.xlsb` parsing would raise outright; `.pdf`/`.docx` silently returned zero rows.
+- Added a startup self-heal: the desktop app now verifies required Python packages are importable before starting the backend, and automatically runs `pip install -r requirements.txt` against the bundled environment if any are missing, instead of only ever working when the bundle happened to be complete.
+- Added a regression test that checks every third-party import used anywhere in `backend/` is actually installed, so a future module that adds an import without a matching `requirements.txt` entry fails CI instead of failing silently for whichever user hits that code path first.
+
 ## v2.5.3 - 2026-09-11
 
 ### Release Pipeline

@@ -238,36 +238,39 @@ def _first_row(ws):
 
 
 def _parse_xlsb(path: Path) -> list[dict]:
-    import pyxlsb
-    with pyxlsb.open_workbook(str(path)) as wb:
-        for sheet in wb.sheets:
-            with wb.get_sheet(sheet) as ws:
-                rows_iter = ws.rows()
-                try:
-                    first = next(rows_iter)
-                except StopIteration:
-                    continue
-                header = [_clean_header(c.v) for c in first]
-                joined = " ".join(header)
-                if not any(k in joined for k in ("asin", "sku", "title", "name", "product")):
-                    continue
-                rows_out = []
-                for row in rows_iter:
-                    raw = {}
-                    for j, h in enumerate(header):
-                        if not h:
-                            continue
-                        v = row[j].v if j < len(row) else None
-                        if v is not None:
-                            raw[h] = v
-                    if not any(v not in (None, "") for v in raw.values()):
-                        continue
+    rows_out: list[dict] = []
+    try:
+        import pyxlsb
+        with pyxlsb.open_workbook(str(path)) as wb:
+            for sheet in wb.sheets:
+                with wb.get_sheet(sheet) as ws:
+                    rows_iter = ws.rows()
                     try:
-                        rows_out.append(normalise_row(raw))
-                    except ValueError:
+                        first = next(rows_iter)
+                    except StopIteration:
                         continue
-                return rows_out
-    return []
+                    header = [_clean_header(c.v) for c in first]
+                    joined = " ".join(header)
+                    if not any(k in joined for k in ("asin", "sku", "title", "name", "product")):
+                        continue
+                    for row in rows_iter:
+                        raw = {}
+                        for j, h in enumerate(header):
+                            if not h:
+                                continue
+                            v = row[j].v if j < len(row) else None
+                            if v is not None:
+                                raw[h] = v
+                        if not any(v not in (None, "") for v in raw.values()):
+                            continue
+                        try:
+                            rows_out.append(normalise_row(raw))
+                        except ValueError:
+                            continue
+                    return rows_out
+    except Exception:
+        pass
+    return rows_out
 
 
 # --------------------------------------------------------------------------
