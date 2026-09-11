@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.4.5 - 2026-09-10
+
+### Provider and Reporting Foundations
+
+- Scoped model discovery to the selected provider and reject known cross-provider model selections before chat requests.
+- Added a versioned report envelope, report filters, rerun and replacement lineage, shared report caching, and gallery/list views for saved CDQ reports.
+
+### Release Reliability
+
+- Added a packaging guard for the bundled Python backend and made the tag-release workflow create that environment before building.
+- Corrected the desktop, API, health, update, and About version metadata to `2.4.5`.
+
 ## v2.4.0 - 2026-09-10
 
 ### Reporting and Automation
