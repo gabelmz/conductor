@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.5.0 - 2026-09-10
+
+### Spine State Layering
+
+- Split the local-first spine into a package with four explicit state layers: default (factory seed), user config (existing non-secret configuration store), preferred (new: chosen chat provider/model plus a fallback target), and active (new: resolved live as user override, then preferred, then default).
+- Chat's default provider/model now resolves through the spine instead of a separate hardcoded constant, fixing a real mismatch between the two.
+- Chat now retries once against the configured fallback target when a provider fails outright, instead of only surfacing the error.
+- Local model search (Ollama, LM Studio, Jan) now uses the existing multi-location discovery scan everywhere, and a model found that way can actually be selected and used, not just listed.
+
+### Supabase `conductor.*` Schema
+
+- Added the migration that creates the `conductor.*` Postgres schema and mirror tables (previously documented but never migrated), verified column-for-column against the live project.
+- Added a push-only sync job from the local spine to `conductor.*`, using the existing sync lease/checkpoint contract.
+- Retired two orphaned root-level seed SQL files that predated any tracked migration.
+
+### Data Management
+
+- Added two live, read-only external data sources (product catalog, suggested listings) to the existing Data Management table/pivot/wrangler view.
+
+### Reliability
+
+- Asana task creation and comments now get the same retry/backoff as every other Asana API call.
+- Fixed test isolation bugs that were writing directly to the real local database on every test run.
+
 ## v2.4.5 - 2026-09-10
 
 ### Provider and Reporting Foundations
