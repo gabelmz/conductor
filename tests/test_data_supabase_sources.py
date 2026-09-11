@@ -111,3 +111,33 @@ def test_supabase_request_failure_returns_empty_not_500(client, monkeypatch):
 def test_unknown_source_still_rejected(client):
     res = client.get("/api/data/table?source=not-a-real-source")
     assert res.status_code == 400
+
+
+def test_asana_views_source_unwraps_payload_envelope(client, monkeypatch):
+    """asana_views.* rows are {object_gid, payload: {...}, source_modified_at,
+    fetched_at, synced_at} — the table view must show real task fields, not
+    one opaque payload blob."""
+    envelope_rows = [
+        {
+            "object_gid": "123456",
+            "payload": {"name": "Fix the thing", "assignee": "Alice", "completed": False},
+            "source_modified_at": "2026-09-10T00:00:00Z",
+            "fetched_at": "2026-09-10T00:01:00Z",
+            "synced_at": "2026-09-10T00:01:05Z",
+        }
+    ]
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        assert headers["Accept-Profile"] == "asana_views"
+        return _FakeResp(envelope_rows)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    res = client.get("/api/data/table?source=supabase_asana_tasks")
+    assert res.status_code == 200
+    body = res.json()
+    assert "payload" not in body["columns"]
+    assert "name" in body["columns"]
+    row = body["rows"][0]
+    assert row["name"] == "Fix the thing"
+    assert row["assignee"] == "Alice"
+    assert row["object_gid"] == "123456"

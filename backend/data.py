@@ -118,10 +118,38 @@ SOURCES = {
 SUPABASE_SOURCES = {
     "supabase_products": {"schema": "product", "table": "products", "label": "Supabase — Products (live)"},
     "supabase_suggested": {"schema": "product", "table": "suggested", "label": "Supabase — Suggested Listings (live)"},
+    # asana_views.* stores each object as a JSONB envelope (object_gid, payload,
+    # source_modified_at, fetched_at, synced_at) rather than typed columns —
+    # unwrap_payload flattens `payload` into the row so the generic table view
+    # shows real task/project/user/team fields instead of one opaque blob
+    # column. Currently blocked live on a missing schema-level GRANT (same
+    # class of issue conductor.* had) — wired up now so it works the moment
+    # that's applied, not built later as a second pass.
+    "supabase_asana_tasks": {"schema": "asana_views", "table": "tasks", "label": "Supabase — Asana Tasks (live)", "unwrap_payload": True},
+    "supabase_asana_projects": {"schema": "asana_views", "table": "projects", "label": "Supabase — Asana Projects (live)", "unwrap_payload": True},
+    "supabase_asana_users": {"schema": "asana_views", "table": "users", "label": "Supabase — Asana Users (live)", "unwrap_payload": True},
+    "supabase_asana_teams": {"schema": "asana_views", "table": "teams", "label": "Supabase — Asana Teams (live)", "unwrap_payload": True},
 }
 
 
-def _supabase_rows(schema: str, table: str, limit: int, q: str = "") -> list[dict]:
+def _unwrap_payload_rows(rows: list[dict]) -> list[dict]:
+    """Flatten a JSONB envelope row ({object_gid, payload: {...}, ...meta})
+    into one flat dict per row: meta columns plus every key inside `payload`,
+    so the generic table/pivot view can show real fields instead of a single
+    opaque `payload` column."""
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        payload = row.get("payload")
+        flat = {k: v for k, v in row.items() if k != "payload"}
+        if isinstance(payload, dict):
+            flat.update(payload)
+        out.append(flat)
+    return out
+
+
+def _supabase_rows(schema: str, table: str, limit: int, q: str = "", *, unwrap_payload: bool = False) -> list[dict]:
     """Read-only fetch from an allowlisted Supabase table. Returns [] (never
     raises) if Supabase isn't configured or the request fails — this is a
     browsing convenience, not a critical path, and must never break the
@@ -147,10 +175,14 @@ def _supabase_rows(schema: str, table: str, limit: int, q: str = "") -> list[dic
         rows = resp.json()
     except Exception:
         return []
+    if not isinstance(rows, list):
+        return []
+    if unwrap_payload:
+        rows = _unwrap_payload_rows(rows)
     if q:
         ql = q.lower()
         rows = [r for r in rows if ql in json.dumps(r, default=str).lower()]
-    return rows if isinstance(rows, list) else []
+    return rows
 
 
 def _supabase_count(schema: str, table: str) -> int:
@@ -178,7 +210,7 @@ def _supabase_count(schema: str, table: str) -> int:
 def _get_rows(source: str, limit: int, q: str = "", tag: str = "") -> list[dict]:
     if source in SUPABASE_SOURCES:
         meta = SUPABASE_SOURCES[source]
-        return _supabase_rows(meta["schema"], meta["table"], limit, q)
+        return _supabase_rows(meta["schema"], meta["table"], limit, q, unwrap_payload=meta.get("unwrap_payload", False))
     if source == "asana":
         return _asana_rows(limit, q)
     if source == "files":
