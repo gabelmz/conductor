@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.5.1 - 2026-09-10
+
+### Data Management
+
+- Added Asana task/project/user/team sources (unwrapping the JSONB payload envelope into real columns), pending a schema-level grant on the live project.
+
 ## v2.5.0 - 2026-09-10
 
 ### Spine State Layering
