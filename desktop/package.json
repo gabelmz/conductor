@@ -28,6 +28,7 @@
     "electron-updater": "^6.8.9"
   },
   "build": {
+    "afterPack": "afterpack-verify-python.cjs",
     "appId": "com.luminize.conductor",
     "productName": "Conductor",
     "publish": {
