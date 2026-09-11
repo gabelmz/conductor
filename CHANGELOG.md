@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.5.3 - 2026-09-11
+
+### Release Pipeline
+
+- Fixed the v2.5.1/v2.5.2 CI release failures: a blind find-and-replace during the version bump had also rewritten `@electron/notarize`'s pinned dependency version in `desktop/package-lock.json` to match the app's own version number, so `npm ci` failed looking for a package version that doesn't exist on the npm registry. Restored it to its real, correct pinned version (unrelated to the app's own versioning) and verified `npm ci` and a full local installer build succeed before tagging this release.
+
 ## v2.5.2 - 2026-09-11
 
 ### Desktop Reliability
