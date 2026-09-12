@@ -1,44 +1,8 @@
 # Changelog
 
-## v2.5.6 - 2026-09-11
+## v2.5.7 - 2026-09-11
 
-### Release Pipeline
-
-- Fixed a race in the release workflow where electron-builder's parallel artifact uploads (installer + blockmap) each independently tried to create the GitHub release for a new tag, and only the smaller file's upload was confirmed in v2.5.5's actual run — the installer itself never got attached. The workflow now creates the release explicitly, once, before electron-builder uploads anything. (v2.5.5's release on GitHub is incomplete/missing its installer as a result — superseded by this one.)
-
-## v2.5.5 - 2026-09-11
-
-### Critical: Installer Never Actually Ran For Anyone
-
-- The bundled backend Python was a plain `venv`, whose `python.exe` is a thin launcher that refuses to start unless the exact absolute path to the base interpreter it was created from ("home" in `pyvenv.cfg`) exists on the machine running it. Every CI-published release through v2.5.4 built that venv from the GitHub Actions runner's own ephemeral toolcache Python — a path that no longer exists once the CI job ends, let alone on any user's machine. This means the installer could never have started its backend for anyone downloading a release, going back to the first published build. Confirmed directly against a real install on a real machine, not inferred.
-- Replaced the bundled venv with Python's official self-contained embeddable distribution (`scripts/build-portable-python.mjs`), which has no external path dependency at all. Verified end-to-end: built it, packaged it, installed the resulting NSIS installer for real, launched the real installed app, and confirmed the backend actually answers `/api/health` with real data.
-- Added a build-time check (`afterpack-verify-python.cjs`) that now fails the build outright if a `pyvenv.cfg` (i.e. a non-portable venv) ever shows up in the bundle again, and confirms the bundled Python can actually import `fastapi`/`uvicorn` before packaging finishes.
-
-## v2.5.4 - 2026-09-11
-
-### Reliability
-
-- Added the missing `python-docx`, `pdfplumber`, and `pyxlsb` dependencies to `requirements.txt` — used by `.docx`/`.pdf`/`.xlsb` catalog parsing but never declared, so a freshly built (CI) install was missing them even though a long-lived local dev environment already had them installed from unrelated prior work. `.xlsb` parsing would raise outright; `.pdf`/`.docx` silently returned zero rows.
-- Added a startup self-heal: the desktop app now verifies required Python packages are importable before starting the backend, and automatically runs `pip install -r requirements.txt` against the bundled environment if any are missing, instead of only ever working when the bundle happened to be complete.
-- Added a regression test that checks every third-party import used anywhere in `backend/` is actually installed, so a future module that adds an import without a matching `requirements.txt` entry fails CI instead of failing silently for whichever user hits that code path first.
-
-## v2.5.3 - 2026-09-11
-
-### Release Pipeline
-
-- Fixed the v2.5.1/v2.5.2 CI release failures: a blind find-and-replace during the version bump had also rewritten `@electron/notarize`'s pinned dependency version in `desktop/package-lock.json` to match the app's own version number, so `npm ci` failed looking for a package version that doesn't exist on the npm registry. Restored it to its real, correct pinned version (unrelated to the app's own versioning) and verified `npm ci` and a full local installer build succeed before tagging this release.
-
-## v2.5.2 - 2026-09-11
-
-### Desktop Reliability
-
-- Fixed a crash-on-launch race in the Electron main process: if the bundled backend process exited quickly (or lost its exit race with the readiness poll), the main process read `.exitCode` off a shared variable its own exit handler had already set to `null`, throwing "Cannot read properties of null (reading 'exitCode')" instead of showing the actual backend failure reason. It now reads from the stable per-launch process reference, so a real failure now shows its real cause.
-
-## v2.5.1 - 2026-09-10
-
-### Data Management
-
-- Added Asana task/project/user/team sources (unwrapping the JSONB payload envelope into real columns), pending a schema-level grant on the live project.
+chore: version bump
 
 ## v2.5.0 - 2026-09-10
 
