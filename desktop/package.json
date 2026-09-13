@@ -66,7 +66,7 @@
         ]
       },
       {
-        "from": "../.venv",
+        "from": "../.venv-portable",
         "to": "venv",
         "filter": [
           "**/*",
@@ -88,6 +88,10 @@
       {
         "from": "../models",
         "to": "models"
+      },
+      {
+        "from": "../requirements.txt",
+        "to": "requirements.txt"
       },
       {
         "from": "gh-token",
