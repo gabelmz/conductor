@@ -83,8 +83,8 @@ BUILTIN_REPORT_PRESETS: dict[str, dict] = {
         "fields": [
             _f("kpi_name", "KPI Name", "string", required=True, aliases=("universal_kpis", "team_kpis", "kpi")),
             _f("definition", "Definition", "string", aliases=("definitions",)),
-            _f("type", "Unit Type", "string", aliases=("option_2",)),
-            _f("description", "Description", "string"),
+            _f("type", "Unit Type", "string"),
+            _f("description", "Description", "string", aliases=("option_2",)),
             _f("section", "Section", "string"),
         ],
     },
@@ -140,7 +140,8 @@ BUILTIN_REPORT_PRESETS: dict[str, dict] = {
             "sheet": None,
             "header_row": 0,
             "multi_section": False,
-            "header_signature": ["vendor", "finsished_goods_id", "sku", "id_type", "platform"],
+            "header_signature": ["vendor", "finsished_goods_id", "finished_goods_id",
+                                 "sku", "id_type", "platform"],
         },
         "fields": [
             _f("vendor", "Vendor", "string", required=True),
@@ -370,23 +371,23 @@ def _score_preset(preset: dict, filename: str | None, extension: str | None,
                   sheet: str | None, tokens: set[str]) -> float:
     """0..1 confidence that `preset` describes this file."""
     f = preset["file"]
+    # Documents carry no header signature — recognise them purely by extension.
+    if preset.get("is_document"):
+        if extension:
+            exts = [e.lower() for e in f["extensions"]]
+            return 0.9 if extension.lower() in exts else 0.0
+        return 0.0
     score = 0.0
-    # Extension match
     if extension:
         exts = [e.lower() for e in f["extensions"]]
-        score += 0.25 if (extension.lower() in exts) else -0.3
-    # Sheet name match (spreadsheets)
+        score += 0.2 if extension.lower() in exts else -0.2
     if f.get("sheet"):
-        score += 0.25 if (sheet and sheet.lower() == f["sheet"].lower()) else -0.2
-    elif f["extensions"] and f["extensions"][0].lower() in (".xlsx", ".xlsm", ".xlsb"):
-        # spreadsheet preset but sheet not confirmed — neutral
-        pass
-    # Header signature overlap
+        score += 0.2 if (sheet and sheet.lower() == f["sheet"].lower()) else -0.1
     sig = {_normalize(s) for s in f.get("header_signature", [])}
     if sig:
         overlap = len(sig & tokens)
-        score += 0.5 * (overlap / len(sig))
-    return round(score, 4)
+        score += 0.8 * (overlap / len(sig))
+    return round(min(1.0, max(0.0, score)), 4)
 
 
 def detect_report_format(filename: str | None = None, *, headers: list[str] | None = None,
@@ -466,6 +467,25 @@ def _validate_preset(body: dict) -> dict:
     file_meta = body.get("file")
     if not isinstance(file_meta, dict):
         raise HTTPException(400, "preset.file must be an object")
+    # Type-check detection metadata so a bad PUT can't poison later parsing.
+    header_row = file_meta.get("header_row")
+    if header_row is not None:
+        try:
+            header_row = int(header_row)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "preset.file.header_row must be an integer or null")
+    delimiter = file_meta.get("delimiter")
+    if delimiter is not None and not isinstance(delimiter, str):
+        raise HTTPException(400, "preset.file.delimiter must be a string or null")
+    sheet = file_meta.get("sheet")
+    if sheet is not None and not isinstance(sheet, str):
+        raise HTTPException(400, "preset.file.sheet must be a string or null")
+    extensions = file_meta.get("extensions")
+    if not isinstance(extensions, list) or not all(isinstance(e, str) for e in extensions):
+        raise HTTPException(400, "preset.file.extensions must be a list of strings")
+    header_sig = file_meta.get("header_signature")
+    if not isinstance(header_sig, list) or not all(isinstance(s, str) for s in header_sig):
+        raise HTTPException(400, "preset.file.header_signature must be a list of strings")
     fields = body.get("fields")
     if not isinstance(fields, list):
         raise HTTPException(400, "preset.fields must be a list")
@@ -496,12 +516,12 @@ def _validate_preset(body: dict) -> dict:
         "entity": entity,
         "is_document": bool(body.get("is_document")),
         "file": {
-            "extensions": [str(e) for e in (file_meta.get("extensions") or [])],
-            "delimiter": file_meta.get("delimiter"),
-            "sheet": file_meta.get("sheet"),
-            "header_row": file_meta.get("header_row"),
+            "extensions": extensions,
+            "delimiter": delimiter,
+            "sheet": sheet,
+            "header_row": header_row,
             "multi_section": bool(file_meta.get("multi_section")),
-            "header_signature": [str(s) for s in (file_meta.get("header_signature") or [])],
+            "header_signature": header_sig,
         },
         "fields": out_fields,
     }
@@ -564,6 +584,8 @@ def delete_preset(key: str):
 def reset_preset(key: str):
     """Drop a user override, restoring the built-in default."""
     overrides = stored_overrides()
+    if key not in overrides and key not in BUILTIN_REPORT_PRESETS:
+        raise HTTPException(404, f"Unknown report preset '{key}'")
     overrides.pop(key, None)
     _spine_write(overrides)
     return None
@@ -579,33 +601,64 @@ def parse_delimited(path, preset: dict) -> list[dict]:
     """Parse a delimited report against a preset's typed field schema.
 
     Returns rows keyed by field key, with numeric/percent/currency fields coerced.
-    Unparseable numeric cells are left as-is (never silently zeroed).
+    Unparseable numeric cells are left as-is (never silently zeroed). Multi-section
+    files (e.g. the two-section KPI definitions sheet) re-anchor a ``section`` value
+    whenever a row matches the preset's section-header signature.
     """
-    delimiter = preset["file"].get("delimiter") or ","
+    f = preset["file"]
+    delimiter = f.get("delimiter") or ","
     with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
         reader = csv.reader(fh, delimiter=delimiter)
         rows = list(reader)
     if not rows:
         return []
-    fields = {f["key"]: f for f in preset["fields"]}
-    headers = [_normalize(h) for h in rows[preset["file"].get("header_row", 0)]]
-    data_start = preset["file"].get("header_row", 0) + 1
-    out = []
+    header_row = f.get("header_row", 0)
+    if header_row is None or header_row >= len(rows):
+        return []
+
+    fields = {fld["key"]: fld for fld in preset["fields"]}
+    headers = rows[header_row]
+
+    def _exact_key(s: str) -> str:
+        return " ".join(str(s).lower().split())
+
+    # Exact (case/whitespace-insensitive) label/alias match resolves ambiguous
+    # headers like 'vs Previous Quarter (%)' vs 'vs Previous Quarter ($)', which
+    # collapse to the same normalized token.
+    exact_lookup: dict[str, str] = {}
+    for fld in fields.values():
+        for name in (fld["label"],) + tuple(fld["aliases"]):
+            exact_lookup[_exact_key(name)] = fld["key"]
+    norm_lookup: dict[str, str] = {}
+    for fld in fields.values():
+        for name in (fld["label"], fld["key"]) + tuple(fld["aliases"]):
+            norm_lookup.setdefault(_normalize(name), fld["key"])
+
+    sig = {_normalize(s) for s in f.get("header_signature", [])}
+    data_start = header_row + 1
+    out: list[dict] = []
+    section = ""
+    if f.get("multi_section") and headers and _normalize(headers[0]) in sig:
+        # The first column header doubles as the first section's title
+        # (e.g. "Universal KPIs" in the two-section KPI sheet).
+        section = str(headers[0]).strip()
     for raw in rows[data_start:]:
         if not any(str(c).strip() for c in raw):
             continue
+        if f.get("multi_section") and _normalize(raw[0]) in sig:
+            section = str(raw[0]).strip()
+            continue
         record: dict[str, Any] = {}
+        if section:
+            record["section"] = section
         for idx, value in enumerate(raw):
             if idx >= len(headers):
                 break
-            # map header token back to a field key
-            for fkey, f in fields.items():
-                candidates = {_normalize(fkey), _normalize(f["label"])} | {_normalize(a) for a in f["aliases"]}
-                if headers[idx] in candidates:
-                    record[fkey] = _coerce(value, f)
-                    break
+            key = exact_lookup.get(_exact_key(headers[idx])) or norm_lookup.get(_normalize(headers[idx]))
+            if key is not None:
+                record[key] = _coerce(value, fields[key])
             else:
-                record[headers[idx]] = value
+                record[_normalize(headers[idx])] = value
         out.append(record)
     return out
 
@@ -617,8 +670,13 @@ def _coerce(value: Any, field: dict) -> Any:
     ftype = field["type"]
     if ftype in ("int", "float", "number", "currency"):
         cleaned = text.replace("$", "").replace(",", "").replace("%", "").strip()
+        negative = False
+        if cleaned.startswith("(") and cleaned.endswith(")"):
+            negative = True
+            cleaned = cleaned[1:-1].strip()
         try:
-            return int(float(cleaned)) if ftype == "int" else float(cleaned)
+            val = int(float(cleaned)) if ftype == "int" else float(cleaned)
+            return -val if negative else val
         except (TypeError, ValueError):
             return text
     if ftype == "percent":
@@ -637,5 +695,5 @@ def _coerce(value: Any, field: dict) -> Any:
             return value
         return value / 100.0
     if ftype == "bool":
-        return text.lower() in ("1", "yes", "true", "y", "on")
+        return text.lower() in ("1", "2", "yes", "true", "y", "t", "on")
     return text

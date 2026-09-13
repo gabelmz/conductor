@@ -165,3 +165,84 @@ def test_builtin_cannot_be_deleted(monkeypatch, tmp_path):
     _fresh_spine(monkeypatch, tmp_path)
     r = client.delete("/api/report-presets/presets/cdq_report")
     assert r.status_code == 400
+
+
+# --- adversarial red-team fixes ----------------------------------------------
+def test_document_detected_by_extension():
+    r = detect_report_format("Handover Document_Zefran Barola.docx", headers=[])
+    assert r["key"] == "handover_doc"
+    assert r["match_type"] in ("exact", "partial")
+
+
+def test_cdq_detected_despite_wrong_extension():
+    # extension mismatch is tolerated when the header signature is unambiguous
+    r = detect_report_format(
+        "CDQ_Report.txt",
+        headers=["Parent ASIN", "CDQ v3 Grade", "CDQ v3 Score",
+                 "Title Quality Score", "Image Quality Score"],
+    )
+    assert r["key"] == "cdq_report"
+
+
+def test_full_signature_plus_extension_is_exact():
+    r = detect_report_format(
+        "CDQ_Report.csv",
+        headers=["Parent ASIN", "CDQ v3 Grade", "CDQ v3 Score",
+                 "Title Quality Score", "Image Quality Score"],
+    )
+    assert r["match_type"] == "exact"
+
+
+def test_parse_sales_pct_usd_disambiguation(tmp_path):
+    p = tmp_path / "sales.csv"
+    p.write_text(
+        "Category,Total Sales,Percentage of Total,vs Previous Quarter (%),"
+        "vs Previous Quarter ($),vs Same Quarter Last Year (%),vs Same Quarter Last Year ($)\n"
+        "Widgets,\"$1,000.00\",12.5%,5%,8,-3%,-4\n",
+        encoding="utf-8",
+    )
+    row = report_presets.parse_delimited(str(p), BUILTIN_REPORT_PRESETS["sales_by_collection"])[0]
+    assert row["vs_previous_quarter_pct"] == 0.05
+    assert row["vs_previous_quarter_usd"] == 8.0
+    assert row["total_sales"] == 1000.0
+
+
+def test_parse_kpi_multisection(tmp_path):
+    p = tmp_path / "kpi.csv"
+    p.write_text(
+        "Universal KPIs,Definitions,Type,Option 2\n"
+        "Revenue,Total revenue,#,How much\n"
+        "Team KPIs,Definitions,Type,Option 2\n"
+        "Cases Won,fixed cases,#,num fixed\n",
+        encoding="utf-8",
+    )
+    rows = report_presets.parse_delimited(str(p), BUILTIN_REPORT_PRESETS["kpi_definitions"])
+    assert len(rows) == 2  # section header rows skipped
+    assert rows[0]["section"] == "Universal KPIs"
+    assert rows[0]["kpi_name"] == "Revenue"
+    assert rows[0]["type"] == "#"
+    assert rows[0]["description"] == "How much"
+    assert rows[1]["section"] == "Team KPIs"
+    assert rows[1]["kpi_name"] == "Cases Won"
+
+
+def test_coerce_accounting_negative_currency():
+    assert report_presets._coerce("(1,234.50)", {"type": "currency"}) == -1234.5
+
+
+def test_validate_rejects_bad_header_row(monkeypatch, tmp_path):
+    _fresh_spine(monkeypatch, tmp_path)
+    body = {
+        "label": "Bad", "entity": "x", "category": "x",
+        "file": {"extensions": [".csv"], "header_row": "abc", "header_signature": []},
+        "fields": [],
+    }
+    r = client.put("/api/report-presets/presets/bad", json=body)
+    assert r.status_code == 400
+    assert "header_row" in r.json()["detail"]
+
+
+def test_reset_unknown_key_404(monkeypatch, tmp_path):
+    _fresh_spine(monkeypatch, tmp_path)
+    r = client.post("/api/report-presets/presets/does_not_exist/reset")
+    assert r.status_code == 404
