@@ -7,16 +7,23 @@ import urllib.error
 from pathlib import Path
 
 REPO = "gabelmz/conductor"
-TAG = "v2.0.0"
-TITLE = "v2.0.0: Local-First Spine, Multi-Provider AI Registry & Team KPIs"
-BODY = """# Conductor v2.0.0 Release
+TAG = "v2.6.0"
+TITLE = "v2.6.0: Report-Format Presets, Schema Mapping & Model Gallery"
+BODY = """# Conductor v2.6.0 Release
 
 ### Key Highlights
-- **Multi-Provider AI Registry**: 22 AI provider presets (OpenAI, Gemini, OpenRouter, DeepSeek, Grok, HuggingFace, Venice AI, Groq, Together, Mistral, Perplexity, Fireworks, Cohere, Replicate, SiliconFlow, DashScope, Novita, Moonshot, 01.AI, NVIDIA NIM, Ollama, LM Studio) with embeddings and streaming.
-- **Local-First Spine Architecture**: SQLite local spine for model catalog, presets, node library, feature registry, datasets, filters, statuses, and lifecycles — mirrored to Supabase `conductor.*` schema.
-- **Team-First Asana KPI Engine**: 73 workbook KPI definitions, membership facts, SLA adherence, and team pivot scorecards.
-- **Suggested-vs-Live Catalog Comparison**: Levenshtein, Soundex, and SequenceMatcher fuzzy matching with 48-hour freshness tracking.
-- **Flow Canvas & Asana Rules Canvas**: Bernie node-graph flow builder with 10 node types and theme presets.
+- **Report-Format Presets**: auto-recognises the nine report formats the catalog
+  department receives (KPI definitions, employee roster, ASIN map, CDQ report,
+  reviews+OPS, Amazon listings, handover docs, FBA shipments, sales-by-collection)
+  with typed field schemas, user-editable and tagged onto the spine.
+- **Schema & Header Mapping**: new Mapping page for fuzzy/AI header-to-field
+  reconciliation of new uploads, schemas and syncs.
+- **Model Gallery**: animated JSON model cards with hardware-fit highlighting.
+- **Asana**: up to 4 PATs with round-robin, exponential backoff, quarantine on
+  repeated 401s, and per-run telemetry.
+- **Providers**: Anthropic removed from the app catalog (22 openai-compatible).
+- **Reliability**: fixed silent failures from missing imports, replaced the
+  deprecated startup hook, bounded hot-path queries.
 """
 
 DIST_DIR = Path(r"C:\Users\GabeMaher\Documents\Development\Vaults\luminize-vault\Development\apps\conductor\dist")
@@ -34,7 +41,7 @@ def main():
         "User-Agent": "Conductor-Publisher",
     }
 
-    # 1. Get existing releases or create a new one for v2.0.0
+    # 1. Get existing releases or create a new one
     url = f"https://api.github.com/repos/{REPO}/releases"
     req = urllib.request.Request(url, headers=headers)
     releases = []
@@ -71,11 +78,10 @@ def main():
                 print(exc.read().decode("utf-8"))
             return 1
 
-    # 2. Upload release assets
+    # 2. Upload release assets (single-file NSIS installer + blockmap + latest.yml)
     assets_to_upload = [
-        ("Conductor-Setup-2.0.0.exe", "application/octet-stream"),
-        ("Conductor-Portable-2.0.0.exe", "application/octet-stream"),
-        ("Conductor-Setup-2.0.0.exe.blockmap", "application/octet-stream"),
+        ("Conductor-Setup-2.6.0.exe", "application/octet-stream"),
+        ("Conductor-Setup-2.6.0.exe.blockmap", "application/octet-stream"),
         ("latest.yml", "text/yaml"),
     ]
 

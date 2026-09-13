@@ -86,7 +86,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="2.5.7",
+    version="2.6.0",
     lifespan=lifespan,
 )
 
@@ -133,7 +133,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "2.5.7",
+        "version": "2.6.0",
         "products": storage.count_products(),
     }
 
@@ -196,7 +196,7 @@ def list_update_versions():
 
     releases.sort(key=lambda x: x["version"], reverse=True)
     return {
-        "current_version": "2.5.7",
+        "current_version": "2.6.0",
         "versions": releases,
     }
 
@@ -924,7 +924,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "2.5.7",
+        "version": "2.6.0",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,

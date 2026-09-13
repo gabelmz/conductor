@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.6.0 - 2026-09-12
+
+### Report-Format Presets & Schema Mapping (new)
+
+- Added a report-presets engine (`backend/report_presets.py`) that auto-recognises the nine report formats the catalog department receives — KPI definitions, employee roster, ASIN map, CDQ report, reviews+OPS, Amazon listings, handover docs, FBA shipments, and sales-by-collection — each with a typed field schema (string/int/float/percent/currency/date/bool/json) and detection rules (extension/delimiter/sheet/header-signature).
+- Presets are user-editable (`/api/report-presets` CRUD + reset) and tagged onto the spine: user overrides persist via `spine.user_config`, builtins seed into `spine_registry`.
+- Added a Schema & Header Mapping page (`view:mapping`) for fuzzy/AI header-to-field reconciliation of new uploads, schemas and syncs.
+
+### Asana, Data, Models
+
+- Asana sync: up to 4 PATs with round-robin, exponential backoff + jitter, quarantine on repeated 401s, and per-run telemetry.
+- Data Management: activity feed labels true job types (no more blanket "catalog") and surfaces a "model running" card.
+- Removed Anthropic from the app provider catalog (22 openai-compatible providers); OpenRouter's live `anthropic/claude-*` IDs remain untouched.
+- Added a Model Gallery view with animated JSON model cards and hardware-fit highlighting.
+
+### Reliability
+
+- Fixed silent failures from missing `urllib.request` (update check) and `re` (Asana KPI summary) imports — both were swallowed by bare `except: pass`.
+- Replaced the deprecated `@app.on_event` startup hook with a lifespan handler; added a short-lived cache on `/api/stats` to bound hot-path queries.
+- Hardened report-preset detection, coercion and validation against adversarial review findings.
+
 ## v2.5.7 - 2026-09-11
 
 chore: version bump
