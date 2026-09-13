@@ -40,10 +40,46 @@
     CommandRegistry.add('side:full', 'Sidebar: full', 'Sidebar', () => setSidebarState('full'));
     CommandRegistry.add('side:rail', 'Sidebar: icon rail', 'Sidebar', () => setSidebarState('rail'));
     CommandRegistry.add('side:tucked', 'Sidebar: tucked away', 'Sidebar', () => setSidebarState('tucked'));
-    CommandRegistry.add('settings:appearance', 'Settings → Appearance', 'Settings', () => openSettingsTab('appearance'));
-    CommandRegistry.add('settings:chat', 'Settings → AI Chat', 'Settings', () => openSettingsTab('chat'));
-    CommandRegistry.add('settings:asana', 'Settings → Asana Sync', 'Settings', () => openSettingsTab('asana'));
-    CommandRegistry.add('settings:advanced', 'Settings → Advanced', 'Settings', () => openSettingsTab('advanced'));
+    const settingsTabs = {
+      appearance: 'Appearance', chat: 'AI Providers', prompt: 'Prompt', asana: 'Asana Sync',
+      spapi: 'SP-API', integrations: 'Integrations', spine: 'Spine', layout: 'Layout',
+      navigation: 'Navigation', advanced: 'Advanced', about: 'About',
+    };
+    for (const [tab, title] of Object.entries(settingsTabs)) {
+      CommandRegistry.add(`settings:${tab}`, `Settings → ${title}`, 'Settings', () => openSettingsTab(tab));
+    }
+    // API / provider management, mirrored from the Settings AI Providers panel so
+    // the same actions are reachable from the palette and from Ctrl+I.
+    CommandRegistry.add('api:open', 'API: manage providers & keys', 'API', () => openSettingsTab('chat'));
+    CommandRegistry.add('api:refresh-catalog', 'API: refresh model catalog from endpoints', 'API', async () => {
+      try {
+        const r = await fetch('/api/chat/catalog/refresh', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        });
+        const d = await r.json();
+        const c = (d && d.counts) || {};
+        if (window.toast) {
+          window.toast(`Pulled ${d.totalModels || 0} models from ${c.endpoint || 0} endpoint(s)` +
+            (c.error ? `, ${c.error} unreachable` : ''), c.error ? 'warn' : 'ok');
+        }
+      } catch (err) {
+        if (window.toast) window.toast(`Catalog refresh failed: ${err.message}`, 'error');
+      }
+    });
+    CommandRegistry.add('api:local-servers', 'API: scan for local model servers', 'API', async () => {
+      try {
+        const d = await (await fetch('/api/llama/servers')).json();
+        const n = (d.servers || []).length;
+        if (window.toast) {
+          window.toast(n ? `${n} local server(s): ` + d.servers.map((x) => `${x.port}${x.model ? ' (' + x.model + ')' : ''}`).join(', ')
+                         : 'No local model servers detected', n ? 'ok' : 'warn');
+        }
+      } catch (err) {
+        if (window.toast) window.toast(`Scan failed: ${err.message}`, 'error');
+      }
+    });
+    CommandRegistry.add('view:mapping', 'Go to Mapping', 'Views', () => showView('mapping'));
+    CommandRegistry.add('view:models', 'Go to Model Gallery', 'Views', () => showView('models'));
     CommandRegistry.add('action:new-automation', 'New automation', 'Actions', () => showView('automations'));
     CommandRegistry.add('action:log-process', 'Log a process', 'Actions', () => showView('processes'));
     CommandRegistry.add('action:run-ai', 'Run an AI workflow', 'Actions', () => showView('ai'));
@@ -170,6 +206,11 @@
     if ((e.ctrlKey || e.metaKey) && (k === 'k' || k === 'p')) {
       e.preventDefault();
       openPalette();
+    } else if ((e.ctrlKey || e.metaKey) && k === 'i') {
+      // Ctrl/Cmd+I -> API providers panel. Previously unbound anywhere.
+      e.preventDefault();
+      closePalette();
+      if (typeof openSettingsTab === 'function') openSettingsTab('chat');
     } else if (e.key === 'Escape' && overlay) {
       e.preventDefault();
       closePalette();

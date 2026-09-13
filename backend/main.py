@@ -987,6 +987,8 @@ from attributeaudit import router as attributeaudit_router
 from hf import router as hf_router
 from mcp_servers import router as mcp_router
 from supabase_sync import router as supabase_sync_router
+from mapping import router as mapping_router
+from report_presets import router as report_presets_router
 
 app.include_router(plugins_router)
 app.include_router(hub_router)
@@ -1014,6 +1016,8 @@ app.include_router(listing_compare_router)
 app.include_router(kpi_router)
 app.include_router(wrangler_router)
 app.include_router(onboarding_router)
+app.include_router(mapping_router)
+app.include_router(report_presets_router)
 
 
 # --------------------------------------------------------------------------

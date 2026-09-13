@@ -208,6 +208,36 @@ def resolve_model(name: str) -> Path:
 DEFAULT_MODEL_REPO = "bartowski/dolphin-2.9-llama3-8b-GGUF"
 DEFAULT_MODEL_FILE = "dolphin-2.9-llama3-8b-Q4_K_M.gguf"
 
+# Job kinds written to storage so local-model work shows up in the Activity
+# feed. Deliberately distinct from "parse_catalog" — a model download is not a
+# catalog import, and labelling it as one is exactly the mislabeling this
+# feed is supposed to stop.
+INSTALL_JOB_KIND = "model_install"
+SERVER_JOB_KIND = "model_start"
+
+# jobs row currently tracking the one-time default-model download, so repeated
+# polls update that row instead of spamming the feed with a new one each time.
+_install_job_id: int | None = None
+
+
+def _record_job(kind: str, status: str, message: str,
+                progress: int = 0, job_id: int | None = None) -> int | None:
+    """Write (or update) one Activity-feed job row for local-model work.
+
+    Returns the job id, or None if the job table isn't available. Every
+    failure is swallowed: activity logging is observability, and must never
+    be the reason a model download or server start fails.
+    """
+    try:
+        import storage
+
+        if job_id is None:
+            job_id = storage.create_job(kind, None)
+        storage.update_job(job_id, status=status, progress=int(progress), message=message)
+        return job_id
+    except Exception:
+        return None
+
 
 def ensure_default_model() -> dict:
     """Kick off (or report progress on) the one-time default-model download.
@@ -216,22 +246,39 @@ def ensure_default_model() -> dict:
     on disk, or {"status": "downloading", "progress": <0-100>} while it's
     still in flight. Never blocks — callers should tell the user to retry
     shortly rather than wait on this.
+
+    Every state change is mirrored onto a `model_install` job row so the
+    install is visible in the Activity feed (it used to happen completely
+    silently, which looked like the app had hung).
     """
+    global _install_job_id
     import hf
 
     path = hf._download_target(DEFAULT_MODEL_REPO, DEFAULT_MODEL_FILE)
     if path.exists():
+        if _install_job_id is not None:
+            _record_job(INSTALL_JOB_KIND, "done", f"Local model ready: {path.name}", 100, _install_job_id)
+            _install_job_id = None
         return {"status": "ready", "path": str(path), "model": path.name}
 
     for d in hf._downloads.values():
         if (d.get("repo_id") == DEFAULT_MODEL_REPO and d.get("filename") == DEFAULT_MODEL_FILE
                 and d.get("status") == "downloading"):
-            return {"status": "downloading", "progress": d.get("progress", 0)}
+            progress = d.get("progress", 0)
+            _install_job_id = _record_job(
+                INSTALL_JOB_KIND, "running",
+                f"Downloading local model {DEFAULT_MODEL_FILE}", progress, _install_job_id,
+            )
+            return {"status": "downloading", "progress": progress}
 
     try:
         hf.download({"repo_id": DEFAULT_MODEL_REPO, "filename": DEFAULT_MODEL_FILE})
     except HTTPException:
         pass  # already queued or landed between the checks above and here
+    _install_job_id = _record_job(
+        INSTALL_JOB_KIND, "running",
+        f"Downloading local model {DEFAULT_MODEL_FILE} from {DEFAULT_MODEL_REPO}", 0, _install_job_id,
+    )
     return {"status": "downloading", "progress": 0}
 
 
@@ -499,6 +546,13 @@ def discover(force: bool = False):
 
 @router.post("/start")
 def start_server(body: dict | None = None):
+    """Make sure a local llama-server is running, spawning one if needed.
+
+    Reuses an already-running server when it finds one. Otherwise it resolves
+    the requested GGUF, spawns llama-server.exe and waits for it to report
+    healthy. The spawn attempt is recorded as a `model_start` job so a slow or
+    failed startup is visible in the Activity feed instead of just hanging.
+    """
     body = body or {}
     # already up?
     existing = _find_running_server()
@@ -510,6 +564,7 @@ def start_server(body: dict | None = None):
     threads = int(body.get("threads") or 0) or max(1, (os.cpu_count() or 4) - 2)
     port = _free_port(int(body.get("port") or DEFAULT_PORT))
 
+    job_id = _record_job(SERVER_JOB_KIND, "running", f"Starting local model server: {model.name}", 0)
     proc = _spawn_server(model, port, ctx, threads)
     ok = _wait_health(port)
     if not ok:
@@ -519,8 +574,10 @@ def start_server(body: dict | None = None):
             tail = SERVER_LOG.read_text(encoding="utf-8", errors="replace")[-400:]
         except Exception:
             pass
+        _record_job(SERVER_JOB_KIND, "error", f"llama-server failed to start ({status})", 0, job_id)
         raise HTTPException(500, f"llama-server failed to start ({status}). Log tail: {tail}")
     _model_cache[port] = (time.time(), model.name)
+    _record_job(SERVER_JOB_KIND, "done", f"Local model server ready on port {port}: {model.name}", 100, job_id)
     return {"ok": True, "running": True, "port": port, "model": model.name, "reused": False}
 
 

@@ -17,6 +17,249 @@ import storage
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 # --------------------------------------------------------------------------
+# Scoring presets
+#
+# A preset is the SINGLE source of truth for CDQ scoring: the same component
+# list produces the per-product score *and* the component breakdown the
+# dashboard renders. Before presets these were two independent hardcoded
+# formulas (computed 30/20/20/30 vs displayed 30/25/20/15/10) which silently
+# drifted apart — the bars and the score disagreed. Reading both from one
+# preset makes that drift structurally impossible.
+#
+# The built-in "default" preset ships the *computed* weights, so the score and
+# every grade downstream are unchanged when no custom preset is configured.
+# --------------------------------------------------------------------------
+SCORING_SCOPE = "scoring"
+PRESETS_CONFIG_KEY = "presets"
+TIERS_CONFIG_KEY = "tiers"
+DEFAULT_PRESET_KEY = "default"
+
+#: Rules a component may use. Each maps a product to 0..weight points.
+#:   min_length     — text field length gate (all-or-nothing)
+#:   non_default    — field is set and not a placeholder value (all-or-nothing)
+#:   min_count      — mapping/collection has at least `min` entries (all-or-nothing)
+#:   checks_average — continuous: mean compliance-check score scaled to weight,
+#:                    `unknown_credit` * weight when the product has no checks
+SCORING_RULES = ("min_length", "non_default", "min_count", "checks_average")
+
+DEFAULT_GRADE_CUTOFFS = [
+    {"grade": "A", "min": 85},
+    {"grade": "B", "min": 70},
+    {"grade": "C", "min": 55},
+    {"grade": "D", "min": 40},
+    {"grade": "U", "min": 0},
+]
+
+BUILTIN_PRESETS: dict[str, dict] = {
+    DEFAULT_PRESET_KEY: {
+        "key": DEFAULT_PRESET_KEY,
+        "label": "Default CDQ",
+        "description": "Shipped catalog-quality weighting: title 30, category 20, "
+                       "structured attributes 20, compliance 30.",
+        "components": [
+            {"key": "title", "name": "Title Quality", "weight": 30,
+             "rule": "min_length", "field": "name", "min": 3,
+             "issue": "Missing or empty title"},
+            {"key": "category", "name": "Category Coverage", "weight": 20,
+             "rule": "non_default", "field": "category", "excludes": ["general"],
+             "issue": "Missing category — assign a category"},
+            {"key": "attributes", "name": "Structured Attributes", "weight": 20,
+             "rule": "min_count", "field": "attributes", "min": 2,
+             "issue": "Low structured attributes — fill material/size/color/etc."},
+            {"key": "compliance", "name": "Compliance", "weight": 30,
+             "rule": "checks_average", "unknown_credit": 0.5, "display_threshold": 70,
+             "issue": "Low compliance score — review attributes against regulations"},
+        ],
+        "grades": DEFAULT_GRADE_CUTOFFS,
+    },
+}
+
+
+# --------------------------------------------------------------------------
+# Tier normalization
+#
+# Reports carry four unreconciled vocabularies (CDQ grades, action priorities,
+# finding tones, compliance severities). Each maps into one normalized tier so
+# a single tier filter can span all of them. The stored vocabularies are never
+# rewritten — `tier` is an additive derived field.
+# --------------------------------------------------------------------------
+DEFAULT_TIER_DEFINITIONS = [
+    {"key": "critical", "label": "Critical", "rank": 0, "color_token": "--t-function-danger"},
+    {"key": "high", "label": "High", "rank": 1, "color_token": "--t-function-danger"},
+    {"key": "warning", "label": "Warning", "rank": 2, "color_token": "--yellow"},
+    {"key": "info", "label": "Info", "rank": 3, "color_token": "--t-function-primary"},
+    {"key": "ok", "label": "OK", "rank": 4, "color_token": "--t-function-success"},
+]
+
+DEFAULT_TIER_VOCABULARIES = {
+    "cdq_grade": {"U": "critical", "D": "high", "C": "warning", "B": "info", "A": "ok"},
+    "action_priority": {"P0": "critical", "P1": "high", "P2": "warning", "P3": "info"},
+    "finding_tone": {"critical": "critical", "warn": "warning", "warning": "warning",
+                     "info": "info", "good": "ok"},
+    "compliance_severity": {"blocker": "critical", "warning": "warning",
+                            "info": "info", "ok": "ok"},
+}
+
+
+def _spine_read(scope: str, key: str, default: dict) -> dict:
+    """Read a spine user-config value, tolerating an un-initialised spine."""
+    try:
+        from spine import user_config
+        value = user_config.read_configuration_value(scope, key, default)
+    except Exception:  # spine unavailable / table missing → shipped defaults
+        return dict(default)
+    return value if isinstance(value, dict) else dict(default)
+
+
+def _spine_write(scope: str, key: str, value: dict) -> None:
+    from spine.schema import init_tables
+    from spine import user_config
+
+    init_tables()  # idempotent; the mapping/scoring pages may run before startup seeding
+    user_config.put_configuration(scope, key, {"value": value})
+
+
+def tier_catalog() -> dict:
+    """Tier definitions + vocabulary mapping, as data the UI can render filters from."""
+    override = _spine_read(SCORING_SCOPE, TIERS_CONFIG_KEY, {})
+    definitions = override.get("definitions")
+    if not isinstance(definitions, list) or not definitions:
+        definitions = [dict(d) for d in DEFAULT_TIER_DEFINITIONS]
+    else:
+        definitions = [dict(d) for d in definitions if isinstance(d, dict) and d.get("key")]
+    vocabularies = {name: dict(mapping) for name, mapping in DEFAULT_TIER_VOCABULARIES.items()}
+    for name, mapping in (override.get("vocabularies") or {}).items():
+        if isinstance(mapping, dict):
+            vocabularies.setdefault(name, {}).update({str(k): str(v) for k, v in mapping.items()})
+    return {
+        "definitions": definitions,
+        "vocabularies": vocabularies,
+        "options": [{"value": d["key"], "label": d.get("label") or d["key"],
+                     "rank": d.get("rank", 99)} for d in definitions],
+    }
+
+
+def tier_for(vocabulary: str, value: object, default: str = "") -> str:
+    """Normalize one vocabulary value (a grade, priority, tone, severity) to a tier."""
+    mapping = tier_catalog()["vocabularies"].get(vocabulary) or {}
+    raw = str(value or "")
+    return mapping.get(raw) or mapping.get(raw.lower()) or mapping.get(raw.upper()) or default
+
+
+def _tier_rank(catalog: dict) -> dict[str, int]:
+    return {d["key"]: d.get("rank", 99) for d in catalog["definitions"]}
+
+
+# --------------------------------------------------------------------------
+# Preset resolution
+# --------------------------------------------------------------------------
+def _int_like(value: float) -> float | int:
+    return int(value) if float(value).is_integer() else round(float(value), 4)
+
+
+def _normalise_preset(raw: object) -> dict:
+    if not isinstance(raw, dict):
+        raise HTTPException(400, "preset must be an object")
+    raw_components = raw.get("components")
+    if not isinstance(raw_components, list) or not raw_components:
+        raise HTTPException(400, "preset.components must be a non-empty list")
+    components: list[dict] = []
+    for index, entry in enumerate(raw_components, 1):
+        if not isinstance(entry, dict):
+            raise HTTPException(400, "preset.components entries must be objects")
+        rule = str(entry.get("rule") or "")
+        if rule not in SCORING_RULES:
+            raise HTTPException(400, f"Unknown scoring rule '{rule}'")
+        try:
+            weight = float(entry.get("weight"))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "preset.components[].weight must be a number")
+        if weight < 0:
+            raise HTTPException(400, "preset.components[].weight cannot be negative")
+        key = str(entry.get("key") or f"component_{index}")
+        components.append({**entry, "key": key,
+                           "name": str(entry.get("name") or key.replace("_", " ").title()),
+                           "weight": _int_like(weight), "rule": rule})
+    keys = [c["key"] for c in components]
+    if len(set(keys)) != len(keys):
+        raise HTTPException(400, "preset.components[].key must be unique")
+    total = sum(float(c["weight"]) for c in components)
+    if round(total, 6) != 100.0:
+        raise HTTPException(400, f"preset component weights must total 100 (got {_int_like(total)})")
+
+    raw_grades = raw.get("grades") or DEFAULT_GRADE_CUTOFFS
+    if not isinstance(raw_grades, list) or not raw_grades:
+        raise HTTPException(400, "preset.grades must be a non-empty list")
+    grades: list[dict] = []
+    for entry in raw_grades:
+        if not isinstance(entry, dict) or not entry.get("grade"):
+            raise HTTPException(400, "preset.grades entries need a 'grade'")
+        try:
+            minimum = float(entry.get("min", 0))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "preset.grades[].min must be a number")
+        grades.append({"grade": str(entry["grade"]), "min": _int_like(minimum)})
+    grades.sort(key=lambda g: float(g["min"]), reverse=True)
+
+    key = str(raw.get("key") or DEFAULT_PRESET_KEY)
+    return {
+        "key": key,
+        "label": str(raw.get("label") or key.replace("_", " ").title()),
+        "description": str(raw.get("description") or ""),
+        "builtin": key in BUILTIN_PRESETS,
+        "components": components,
+        "grades": grades,
+    }
+
+
+def stored_presets() -> dict[str, dict]:
+    """Custom presets persisted through spine.user_config (scope 'scoring')."""
+    value = _spine_read(SCORING_SCOPE, PRESETS_CONFIG_KEY, {})
+    return {str(k): v for k, v in value.items() if isinstance(v, dict)}
+
+
+def load_preset(preset: str | dict | None = None) -> dict:
+    """Resolve a preset key (or an inline preset body) to a validated preset."""
+    if isinstance(preset, dict):
+        return _normalise_preset(preset)
+    key = str(preset or DEFAULT_PRESET_KEY).strip() or DEFAULT_PRESET_KEY
+    custom = stored_presets()
+    if key in custom:
+        return _normalise_preset({**custom[key], "key": key})
+    if key in BUILTIN_PRESETS:
+        return _normalise_preset(BUILTIN_PRESETS[key])
+    raise HTTPException(404, f"Unknown scoring preset '{key}'")
+
+
+def list_presets() -> list[dict]:
+    custom = stored_presets()
+    out = [_normalise_preset(BUILTIN_PRESETS[k]) for k in BUILTIN_PRESETS if k not in custom]
+    for key, body in custom.items():
+        out.append(_normalise_preset({**body, "key": key}))
+    return sorted(out, key=lambda p: (not p["builtin"], p["key"]))
+
+
+def save_preset(key: str, body: dict) -> dict:
+    key = str(key or "").strip()
+    if not key:
+        raise HTTPException(400, "preset key is required")
+    preset = _normalise_preset({**body, "key": key})
+    presets = stored_presets()
+    presets[key] = {k: v for k, v in preset.items() if k != "builtin"}
+    _spine_write(SCORING_SCOPE, PRESETS_CONFIG_KEY, presets)
+    return preset
+
+
+def delete_preset(key: str) -> dict:
+    presets = stored_presets()
+    if key not in presets:
+        raise HTTPException(404, f"Unknown scoring preset '{key}'")
+    presets.pop(key)
+    _spine_write(SCORING_SCOPE, PRESETS_CONFIG_KEY, presets)
+    return {"ok": True, "key": key}
+
+
+# --------------------------------------------------------------------------
 # CDQ computation (live data)
 # --------------------------------------------------------------------------
 def _brand(attrs: dict) -> str:
@@ -27,43 +270,61 @@ def _brand(attrs: dict) -> str:
     return ""
 
 
-def _quality(products: list[dict], checks_by_product: dict[int, list[dict]]) -> list[dict]:
-    """Score each product 0-100 and assign a CDQ grade."""
+def _component_points(component: dict, *, name: str, category: str, attrs: dict,
+                      checks: list[dict]) -> float:
+    """Points this component awards one product — 0..component weight."""
+    rule = component["rule"]
+    weight = component["weight"]
+    if rule == "min_length":
+        return float(weight) if len(name) >= int(component.get("min", 1)) else 0.0
+    if rule == "non_default":
+        excludes = {str(x).lower() for x in (component.get("excludes") or ())}
+        return float(weight) if category and category.lower() not in excludes else 0.0
+    if rule == "min_count":
+        return float(weight) if len(attrs) >= int(component.get("min", 1)) else 0.0
+    if rule == "checks_average":
+        if checks:
+            return (sum(c.get("score") or 0 for c in checks) / len(checks)) * (weight / 100.0)
+        return weight * float(component.get("unknown_credit", 0.5))
+    raise HTTPException(400, f"Unknown scoring rule '{rule}'")
+
+
+def _grade_for(score: float, cutoffs: list[dict]) -> str:
+    for cutoff in cutoffs:
+        if score >= float(cutoff["min"]):
+            return cutoff["grade"]
+    return cutoffs[-1]["grade"]
+
+
+def _quality(products: list[dict], checks_by_product: dict[int, list[dict]],
+             preset: dict | None = None) -> list[dict]:
+    """Score each product 0-100 and assign a CDQ grade, driven by `preset`."""
+    resolved = preset or load_preset()
+    components = resolved["components"]
+    cutoffs = resolved["grades"]
     out = []
     for p in products:
         name = (p.get("name") or "").strip()
         category = (p.get("category") or "general").strip()
         attrs = p.get("attributes") or {}
-        score = 0.0
-        if len(name) >= 3:
-            score += 30
-        if category and category.lower() != "general":
-            score += 20
-        if len(attrs) >= 2:
-            score += 20
         checks = checks_by_product.get(p["id"], [])
-        if checks:
-            score += (sum(c.get("score") or 0 for c in checks) / len(checks)) * 0.30
-        else:
-            score += 15  # unknown compliance → partial credit
+        score = 0.0
+        points: dict[str, float] = {}
+        for component in components:
+            earned = _component_points(component, name=name, category=category,
+                                       attrs=attrs, checks=checks)
+            points[component["key"]] = earned
+            score += earned
         score = round(min(100.0, score), 1)
-        if score >= 85:
-            grade = "A"
-        elif score >= 70:
-            grade = "B"
-        elif score >= 55:
-            grade = "C"
-        elif score >= 40:
-            grade = "D"
-        else:
-            grade = "U"
         out.append({"id": p["id"], "sku": p.get("sku", ""), "name": name,
                     "category": category, "brand": _brand(attrs), "score": score,
-                    "grade": grade, "n_attrs": len(attrs)})
+                    "grade": _grade_for(score, cutoffs), "n_attrs": len(attrs),
+                    "component_points": points})
     return out
 
 
-def generate_cdq() -> dict:
+def generate_cdq(preset: str | dict | None = None) -> dict:
+    resolved = load_preset(preset)
     products = storage.list_products(limit=5000)
     checks = storage.list_checks(limit=20000)
     cbp: dict[int, list[dict]] = {}

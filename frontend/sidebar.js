@@ -25,6 +25,7 @@ const NAV_ITEMS = {
   workflows:       { label: 'Workflows',          icon: 'codicon-git-merge',          view: 'workflows' },
   settings:        { label: 'Settings',           icon: 'codicon-settings-gear',      view: 'settings' },
   models:          { label: 'Models',             icon: 'codicon-hubot',              view: 'models' },
+  modelgallery:    { label: 'Model Gallery',        icon: 'codicon-library',            view: 'modelgallery' },
 
   // Analytics & Data
   data:            { label: 'Data Management',    icon: 'codicon-database',           view: 'data' },
@@ -32,6 +33,7 @@ const NAV_ITEMS = {
   kpi:             { label: 'KPI Studio',         icon: 'codicon-graph-line',         view: 'kpi' },
   insights:        { label: 'Insights',           icon: 'codicon-graph',              view: 'insights' },
   reports:         { label: 'Reports',            icon: 'codicon-report',             view: 'reports' },
+  mapping:         { label: 'Mapping',              icon: 'codicon-type-hierarchy-sub', view: 'mapping' },
   import:          { label: 'Bulk Import',        icon: 'codicon-cloud-upload',       view: 'import' },
   sources:         { label: 'Local Sources',      icon: 'codicon-folder-opened',      view: 'sources' },
   attraudit:       { label: 'Attribute Audit',    icon: 'codicon-verified',           view: 'attraudit' },
@@ -105,7 +107,7 @@ const SIDEBAR_PRESETS = {
     label: 'Catalog & Listing Operations',
     desc: 'Catalog management, listings, variations, file ingest, attribute audits, and flat files.',
     sections: [
-      { label: 'Catalog', items: ['products', 'listings', 'variations', 'ingest', 'attraudit', 'flatfile', 'brandcompare', 'chat', 'settings'] },
+      { label: 'Catalog', items: ['products', 'listings', 'variations', 'ingest', 'attraudit', 'flatfile', 'mapping', 'brandcompare', 'chat', 'settings'] },
     ],
   },
   amazon_fba: {
@@ -126,7 +128,7 @@ const SIDEBAR_PRESETS = {
     label: 'AI & Flow Engineering',
     desc: 'Flow Canvas, local Llama models, autonomous agents, and AI workflow builders.',
     sections: [
-      { label: 'AI Suite', items: ['chat', 'models', 'bernie', 'asanarules', 'agents', 'aiworkflows', 'agentbuilder', 'settings'] },
+      { label: 'AI Suite', items: ['chat', 'models', 'modelgallery', 'bernie', 'asanarules', 'agents', 'aiworkflows', 'agentbuilder', 'settings'] },
     ],
   },
   process_automation: {
@@ -140,7 +142,7 @@ const SIDEBAR_PRESETS = {
     label: 'Data Science & Analytics',
     desc: 'DataWrangler, KPI Studio, bulk imports, local sources, and SvL comparison.',
     sections: [
-      { label: 'Analytics', items: ['data', 'datawrangler', 'kpi', 'import', 'sources', 'svl', 'reports', 'settings'] },
+      { label: 'Analytics', items: ['data', 'datawrangler', 'kpi', 'import', 'sources', 'svl', 'reports', 'mapping', 'settings'] },
     ],
   },
   compliance_gov: {

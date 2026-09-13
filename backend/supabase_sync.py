@@ -43,6 +43,14 @@ class LocalAdapter:
 
 
 def _load_config() -> dict[str, str]:
+    """Read the saved Supabase connection details off disk.
+
+    Where from: `data/supabase.json` (in packaged builds, the Electron
+    userData folder — see DATA_DIR above).
+    What you get back: `{"url", "service_key", "schema"}`, with empty strings
+    when nothing has been configured yet. Never raises: a missing or corrupt
+    file just means "not configured".
+    """
     try:
         raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
@@ -83,6 +91,11 @@ def save_config(*, url: str, service_key: str, schema: str = "public") -> dict[s
 
 
 def _headers(cfg: dict[str, str]) -> dict[str, str]:
+    """Build the HTTP headers every Supabase call needs (auth + JSON).
+
+    The service-role key goes out in the `apikey` and `Authorization` headers.
+    Never log this dict — it contains the raw credential.
+    """
     return {
         "apikey": cfg["service_key"],
         "Authorization": f"Bearer {cfg['service_key']}",
@@ -101,6 +114,13 @@ def _request(
     headers: dict[str, str] | None = None,
     config: dict[str, str] | None = None,
 ):
+    """Make one authenticated call to the Supabase REST (PostgREST) API.
+
+    Where to: `<project url>/rest/v1/<resource>`, with the configured schema
+    sent as Accept-Profile (reads) or Content-Profile (writes).
+    What you get back: the raw `requests` response, already checked for HTTP
+    errors. Raises RuntimeError when Supabase has not been configured.
+    """
     cfg = config or _load_config()
     if not cfg["url"] or not cfg["service_key"]:
         raise RuntimeError("Supabase URL and service key are not configured")
@@ -141,6 +161,15 @@ def _now() -> str:
 def _push_entity(
     entity_type: str, adapter: LocalAdapter, *, session: Any
 ) -> int:
+    """Send one collection of local records UP to Supabase.
+
+    Where from: the injected adapter's `list_records()` (local SQLite).
+    Where to: the `conductor_records` mirror table, one row per record, keyed
+    by (entity_type, record_key) so re-running is safe — an existing row is
+    merged, not duplicated.
+    What you get back: how many records were pushed. Raises if any record is
+    missing its key field, rather than silently dropping it.
+    """
     rows_by_key: dict[str, dict[str, Any]] = {}
     for record in adapter.list_records():
         key = record.get(adapter.key_field)
@@ -170,6 +199,11 @@ def _push_entity(
 
 
 def _timestamp(value: Any) -> datetime | None:
+    """Turn a stored ISO date string into a real datetime, or None if it isn't one.
+
+    Used to compare "which copy is newer" during a pull. Anything unparseable
+    becomes None so the comparison is skipped rather than guessed at.
+    """
     if not value:
         return None
     try:
@@ -181,6 +215,15 @@ def _timestamp(value: Any) -> datetime | None:
 def _pull_entity(
     entity_type: str, adapter: LocalAdapter, *, conflict: str, session: Any
 ) -> tuple[int, int]:
+    """Bring one collection of records DOWN from Supabase into local storage.
+
+    Where from: the `conductor_records` mirror table, read a page (1000 rows)
+    at a time until the last page comes back short.
+    What happens to each row: it is written into local storage through the
+    injected adapter — unless the conflict policy says to keep the local copy
+    ("local"), or says "newest" and the local copy has the later timestamp.
+    What you get back: `(pulled, skipped)` counts.
+    """
     remote_rows: list[dict[str, Any]] = []
     page_size = 1000
     offset = 0
@@ -408,14 +451,68 @@ def api_status() -> dict[str, Any]:
     return get_status()
 
 
+# --------------------------------------------------------------------------
+# Cross-project key reuse
+# --------------------------------------------------------------------------
+# A service-role key is scoped to ONE Supabase project and is the most
+# powerful credential that project has. So when the URL changes and no new key
+# is supplied, reusing the stored key means sending project A's master key to
+# project B — at best it 401s, at worst it leaks the key to whoever controls
+# the new URL.
+#
+# The old behaviour was a hard 400: you could never change the URL without
+# re-typing the key, which is painful for the legitimate case (fixing a typo
+# in the host, moving between the project's own aliases). The rule now is
+# *opt-in, never silent*: pass {"reuse_existing_key": true} and Conductor will
+# reuse the key you already have; leave it out and it still refuses. The
+# protection is preserved — it just became a decision the caller makes
+# explicitly instead of a wall.
+REUSE_KEY_FIELD = "reuse_existing_key"
+_REUSE_HINT = (
+    f'send "{REUSE_KEY_FIELD}": true to deliberately reuse the key you already have '
+    "(it will be sent to the new project)."
+)
+
+
+def _resolve_key_for_url(
+    body: dict[str, Any], current: dict[str, str], url: str, *, action: str
+) -> str:
+    """Decide which service-role key to use for `url`, refusing silent reuse.
+
+    Returns the supplied key when one was given. When the URL differs from the
+    stored one and no key was supplied, the stored key is reused ONLY if the
+    caller explicitly opted in with ``reuse_existing_key: true``; otherwise it
+    raises HTTP 400. Never logs or returns the key itself.
+    """
+    supplied_key = str(body.get("service_key") or "").strip()
+    if supplied_key:
+        return supplied_key
+    if url == current["url"]:
+        return current["service_key"]
+    if not bool(body.get(REUSE_KEY_FIELD)):
+        raise HTTPException(
+            400,
+            f"{action} a different Supabase URL needs that project's service-role key — {_REUSE_HINT}",
+        )
+    if not current["service_key"]:
+        raise HTTPException(400, "There is no stored service-role key to reuse — supply one.")
+    return current["service_key"]
+
+
 @router.post("/config")
 def api_config(body: dict[str, Any]) -> dict[str, Any]:
+    """Save the Supabase project URL, service-role key and schema.
+
+    Body: `{url, service_key, schema, reuse_existing_key}`. Anything you leave
+    out keeps its current value. Changing the URL without giving a new key
+    requires `reuse_existing_key: true` — see the note above on why the key is
+    never carried across projects silently.
+    What you get back: the redacted status (the key itself is only ever shown
+    as `****` plus its last four characters).
+    """
     current = _load_config()
     url = str(body.get("url") or current["url"]).strip().rstrip("/")
-    supplied_key = str(body.get("service_key") or "").strip()
-    if url != current["url"] and not supplied_key:
-        raise HTTPException(400, "Changing the Supabase URL requires a new service-role key")
-    key = supplied_key or current["service_key"]
+    key = _resolve_key_for_url(body, current, url, action="Changing to")
     schema = str(body.get("schema") or current["schema"] or "public").strip()
     if not url or not key:
         raise HTTPException(400, "Supabase URL and service-role key are required")
@@ -427,15 +524,19 @@ def api_config(body: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("/test")
 def api_test(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Try the connection without saving anything.
+
+    Body is the same shape as /config and follows the same key rule: testing a
+    different URL with the stored key requires `reuse_existing_key: true`.
+    What you get back: `{"ok": bool, "message": str}` — never the credential.
+    """
     current = _load_config()
     body = body or {}
-    supplied_key = str(body.get("service_key") or "").strip()
     url = str(body.get("url") or current["url"]).strip().rstrip("/")
-    if url != current["url"] and not supplied_key:
-        raise HTTPException(400, "Testing a different Supabase URL requires its service-role key")
+    key = _resolve_key_for_url(body, current, url, action="Testing")
     config = {
         "url": url,
-        "service_key": supplied_key or current["service_key"],
+        "service_key": key,
         "schema": str(body.get("schema") or current["schema"] or "public").strip(),
     }
     return test_connection(config=config)

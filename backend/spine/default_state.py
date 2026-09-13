@@ -97,6 +97,7 @@ def seed_defaults() -> None:
         conn.execute("INSERT INTO spine_global_filter_definitions VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(filter_key) DO UPDATE SET label=excluded.label,entity_type=excluded.entity_type,field_path=excluded.field_path,control_type=excluded.control_type,options_source=excluded.options_source,sort_order=excluded.sort_order,updated_at=excluded.updated_at", (key, label, entity, path, control, _json(source), None, 1, order, "{}", now))
     _seed_models(conn, now)
     _seed_registry(conn, now)
+    _seed_report_presets(conn, now)
     conn.commit()
 
 
@@ -129,11 +130,6 @@ def _seed_models(conn, now: str) -> None:
 
 
 def _seed_registry(conn, now: str) -> None:
-    """Seed the feature glossary from the actual frontend nav registry.
-
-    Reading the canonical data-driven sidebar keeps the backend registry aligned
-    with the live app without maintaining a duplicate Python list.
-    """
     nav_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "sidebar.js"
     try:
         source = nav_path.read_text(encoding="utf-8")
@@ -152,4 +148,32 @@ def _seed_registry(conn, now: str) -> None:
             "INSERT INTO spine_registry VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(kind,registry_key) DO UPDATE SET label=excluded.label,route=excluded.route,icon=excluded.icon,metadata=excluded.metadata,source_hash=excluded.source_hash,updated_at=excluded.updated_at",
             ("feature", item["id"], item["label"], "Conductor application feature.", item["view"], item["icon"], "active", "stable", "[]", _json(payload), digest, now, now),
+        )
+
+
+def _seed_report_presets(conn, now: str) -> None:
+    """Tag each report-format preset into spine_registry (kind=report_preset).
+
+    The canonical field schemas live in report_presets.BUILTIN_REPORT_PRESETS;
+    this only registers the preset in the spine glossary so it is discoverable
+    (and mirrored to Supabase `conductor.*`) alongside features, datasets, etc.
+    """
+    try:
+        import report_presets
+    except Exception:
+        return
+    for key, preset in report_presets.BUILTIN_REPORT_PRESETS.items():
+        payload = {
+            "entity": preset.get("entity"),
+            "category": preset.get("category"),
+            "extensions": preset.get("file", {}).get("extensions", []),
+            "field_count": len(preset.get("fields", [])),
+        }
+        digest = hashlib.sha256(_json(payload).encode()).hexdigest()
+        conn.execute(
+            "INSERT INTO spine_registry VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(kind,registry_key) DO UPDATE SET label=excluded.label,description=excluded.description,route=excluded.route,icon=excluded.icon,metadata=excluded.metadata,source_hash=excluded.source_hash,updated_at=excluded.updated_at",
+            (report_presets.REGISTRY_KIND, key, preset.get("label", key),
+             preset.get("description", ""), "report-presets", "codicon-file", "active", "stable",
+             "[]", _json(payload), digest, now, now),
         )

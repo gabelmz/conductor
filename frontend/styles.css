@@ -2726,3 +2726,29 @@ body.split-mode #view-root {
 .ms-run > div { display: flex; flex-direction: column; } .ms-run strong { font-size: .69rem; } .ms-run span, .ms-run time { color: var(--muted-fg); font-size: .64rem; }
 .ms-text-btn { border: 0; background: transparent; color: var(--t-function-primary, #0053fd); cursor: pointer; font: inherit; }
 @media (max-width: 900px) { .ms-supabase-form, .ms-form-grid, .ms-sync-grid { grid-template-columns: 1fr; } .ms-server, .ms-sync-card { grid-template-columns: 32px 1fr; } .ms-server-actions, .ms-sync-actions { grid-column: 1 / -1; justify-content: flex-end; } }
+
+
+/* ----------------------------------------------------------- model gallery */
+.mg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+.mg-card { border: 1px solid var(--t-edges-borderColor, rgba(128,128,140,.25)); border-radius: 10px; padding: 0.75rem; background: var(--t-surface, transparent); overflow: hidden; }
+.mg-card-compact { padding: 0.45rem 0.6rem; font-size: 0.78rem; }
+.mg-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.mg-title { font-weight: 600; overflow-wrap: anywhere; }
+.mg-sub { font-size: 0.72rem; opacity: 0.75; margin-top: 0.2rem; }
+.mg-models { list-style: none; margin: 0.5rem 0 0; padding: 0; max-height: 11rem; overflow-y: auto; }
+.mg-model { font-size: 0.72rem; padding: 0.12rem 0; overflow-wrap: anywhere; }
+.mg-model-empty { opacity: 0.6; font-style: italic; }
+.mg-json { font-size: 0.66rem; line-height: 1.35; margin: 0.55rem 0 0; padding: 0.5rem; border-radius: 6px; background: var(--t-surfaceSunken, rgba(128,128,140,.10)); max-height: 12rem; overflow: auto; }
+.mg-fit-ok { border-left: 3px solid var(--t-success, #3fb950); }
+.mg-fit-warning { border-left: 3px solid var(--t-warning, #d29922); }
+.mg-fit-high { border-left: 3px solid var(--t-danger, #f85149); }
+.mg-fit-critical { border-left: 3px solid var(--t-danger, #f85149); opacity: 0.75; }
+
+@keyframes mg-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes mg-reveal { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 12rem; } }
+.mg-animate { animation: mg-rise 0.22s ease-out both; }
+.mg-json-animate { animation: mg-reveal 0.3s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mg-animate, .mg-json-animate { animation: none; }
+}

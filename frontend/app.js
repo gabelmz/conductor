@@ -170,6 +170,7 @@ const VIEW_RENDERERS = {
   ingest: () => renderIngest(),
   variation: () => renderVariation(),
   reports: () => renderReports(),
+  mapping: () => window.ConductorMapping ? window.ConductorMapping.render() : renderModuleStub("mapping"),
   guidelines: () => renderGuidelines(),
   workflows: () => renderWorkflows(),
   data: () => renderData(),
