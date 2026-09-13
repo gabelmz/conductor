@@ -14,10 +14,12 @@ Brings multi-provider architecture into Conductor's FastAPI backend:
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -275,6 +277,37 @@ def has_key(provider_id: str) -> bool:
     return provider_id in _read_json(KEYS_PATH)
 
 
+def effective_base_url(provider_id: str) -> str:
+    """The base URL actually used for a provider: user override, else preset."""
+    meta = HOSTED_PROVIDERS.get(provider_id) or {}
+    cfg = read_provider_config(provider_id)
+    return (cfg.get("baseUrl") or meta.get("base_url") or "").rstrip("/")
+
+
+def is_local_endpoint(base_url: str) -> bool:
+    """True when base_url points back at this machine.
+
+    Locally hosted inference servers do not issue API keys, so demanding one
+    makes them unreachable. Detection is by HOST rather than by a hardcoded
+    provider id, which is what previously limited keyless access to exactly
+    "ollama" and "lmstudio" — every other local runtime (llama.cpp server,
+    vLLM, atomic-chat, unsloth, or simply a custom baseUrl pointed at
+    localhost) was refused with "Add an API key in Settings".
+    """
+    try:
+        host = (urllib.parse.urlsplit(base_url).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback or ipaddress.ip_address(host).is_unspecified
+    except ValueError:
+        return False
+
+
 def resolve_api_key(provider_id: str, request_key: str | None = None) -> str | None:
     """Key resolution order: per-request key → stored plaintext → env var."""
     if request_key:
@@ -290,8 +323,8 @@ def resolve_api_key(provider_id: str, request_key: str | None = None) -> str | N
         val = os.environ.get(env)
         if val:
             return val
-    # Local providers (ollama, lmstudio) don't strictly require a key
-    if provider_id in ("ollama", "lmstudio"):
+    # Anything served from this machine is keyless (see is_local_endpoint).
+    if is_local_endpoint(effective_base_url(provider_id)):
         return "local"
     return None
 
@@ -652,7 +685,7 @@ def build_adapter(provider_id: str, api_key: str | None) -> object | None:
         if not auth:
             return None
         return ProxyAdapter(provider_id, base_url, auth, default_model)
-    if not api_key and provider_id not in ("ollama", "lmstudio"):
+    if not api_key and not is_local_endpoint(base_url):
         return None
     if meta["kind"] == "anthropic":
         return AnthropicAdapter(provider_id, base_url, api_key or "", default_model)
@@ -692,7 +725,7 @@ def list_provider_models(provider_id: str) -> tuple[list[dict], str]:
         return [], "disabled"
     default_model = cfg.get("defaultModelId") or HOSTED_PROVIDERS[provider_id]["default_model"]
     adapter = build_adapter(provider_id, resolve_api_key(provider_id))
-    source = "local" if provider_id in ("ollama", "lmstudio") else "provider-api"
+    source = "local" if is_local_endpoint(effective_base_url(provider_id)) else "provider-api"
     raw_models: list[dict] = []
     if adapter:
         try:

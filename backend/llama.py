@@ -20,6 +20,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from concurrent import futures
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -36,6 +37,43 @@ SERVER_LOG = APP_ROOT / "data" / "llama-server.log"
 DEFAULT_PORT = 8098
 MAX_TRY_PORTS = 4  # closed localhost ports can be FW-dropped; keep probes tiny
 START_TIMEOUT_S = 120
+
+# Ports Conductor itself starts llama-server on. ONLY these are ever swept by
+# stop_server() - discovery may look far wider, but we must never shut down a
+# server we did not start (a user's own Ollama, for instance).
+MANAGED_PORTS = tuple(range(DEFAULT_PORT, DEFAULT_PORT + MAX_TRY_PORTS))
+
+# Well-known local inference ports, probed for DISCOVERY only. Detection used to
+# be limited to MANAGED_PORTS, so a model served by Ollama (11434) or LM Studio
+# (1234) was never found even though both ship in the provider catalog.
+# Override with CONDUCTOR_LLAMA_PORTS="11434,1234,9000" (comma-separated).
+WELL_KNOWN_LOCAL_PORTS = (
+    11434,  # Ollama
+    1234,   # LM Studio
+    8000,   # vLLM / unsloth / text-generation-webui
+    8080,   # llama.cpp server default
+    5000,   # text-generation-webui legacy
+    3000,   # atomic-chat
+    1337,   # Jan
+)
+
+
+def discovery_ports() -> tuple[int, ...]:
+    """Ports to probe when looking for an already-running local server.
+
+    Managed ports come first so the common case short-circuits before any
+    wider scan.
+    """
+    override = (os.environ.get("CONDUCTOR_LLAMA_PORTS") or "").strip()
+    if override:
+        extra: list[int] = []
+        for chunk in override.replace(";", ",").split(","):
+            chunk = chunk.strip()
+            if chunk.isdigit() and 1 <= int(chunk) <= 65535:
+                extra.append(int(chunk))
+        if extra:
+            return tuple(dict.fromkeys((*MANAGED_PORTS, *extra)))
+    return tuple(dict.fromkeys((*MANAGED_PORTS, *WELL_KNOWN_LOCAL_PORTS)))
 
 _proc: subprocess.Popen | None = None
 _proc_port: int | None = None
@@ -59,23 +97,69 @@ def _free_port(start: int) -> int:
     return start
 
 
-def _health_ok(port: int, timeout: float = 0.25) -> bool:
-    """Raw-socket /health probe — fails fast (urllib can hang on FW-dropped ports)."""
+def _probe(port: int, path: str, timeout: float) -> bool:
+    """Raw-socket HTTP probe - fails fast (urllib can hang on FW-dropped ports)."""
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=timeout) as s:
-            s.sendall(b"GET /health HTTP/1.0\r\n\r\n")
+            s.settimeout(timeout)
+            req = f"GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n"
+            s.sendall(req.encode())
             data = s.recv(64)
         return b"200" in data
     except Exception:
         return False
 
 
+def _health_ok(port: int, timeout: float = 0.25) -> bool:
+    """True when something OpenAI-compatible is serving on `port`.
+
+    /health is llama.cpp-specific. Ollama, LM Studio, vLLM and friends do not
+    implement it, so a /health-only probe reported them as down - which is why
+    local model detection missed every runtime except our own bundled server.
+    Falls back to /v1/models, which all OpenAI-compatible servers expose.
+    """
+    return _probe(port, "/health", timeout) or _probe(port, "/v1/models", timeout)
+
+
 def _find_running_server() -> int | None:
-    """If an existing llama-server (ours or a prior run's) is up, find it."""
-    for port in range(DEFAULT_PORT, DEFAULT_PORT + MAX_TRY_PORTS):
+    """If an existing local server (ours or another runtime) is up, find it.
+
+    Managed ports are checked first and sequentially, so the overwhelmingly
+    common case costs one probe. The wider well-known range is only reached
+    when nothing of ours is running, and is probed in parallel to keep total
+    wall time bounded regardless of how many ports are configured.
+    """
+    for port in MANAGED_PORTS:
         if _health_ok(port):
             return port
+
+    wider = [p for p in discovery_ports() if p not in MANAGED_PORTS]
+    if not wider:
+        return None
+    with futures.ThreadPoolExecutor(max_workers=min(8, len(wider))) as pool:
+        for port, ok in pool.map(lambda pt: (pt, _health_ok(pt)), wider):
+            if ok:
+                return port
     return None
+
+
+def detect_local_servers() -> list[dict]:
+    """Every reachable local OpenAI-compatible server, with its loaded model.
+
+    Probed in parallel so adding ports does not lengthen the scan.
+    """
+    ports = discovery_ports()
+    with futures.ThreadPoolExecutor(max_workers=min(8, len(ports))) as pool:
+        alive = [pt for pt, ok in pool.map(lambda pt: (pt, _health_ok(pt)), ports) if ok]
+    return [
+        {
+            "port": port,
+            "base_url": f"http://127.0.0.1:{port}/v1",
+            "managed": port in MANAGED_PORTS,
+            "model": _proc_model_name(port),
+        }
+        for port in alive
+    ]
 
 
 def resolve_model(name: str) -> Path:
@@ -232,8 +316,18 @@ def _proc_model_name(port: int | None = None) -> str | None:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=1.5) as r:
             data = json.loads(r.read().decode("utf-8"))
-        models = data.get("models") or []
-        name = models[0].get("model") if models else None
+        # llama.cpp returns {"models":[{"model": ...}]}; every other
+        # OpenAI-compatible server (Ollama, LM Studio, vLLM) returns the
+        # standard {"data":[{"id": ...}]}. Reading only the former is why
+        # third-party runtimes showed up with no model name.
+        entries = data.get("models") or data.get("data") or []
+        name = None
+        if entries:
+            first = entries[0]
+            if isinstance(first, dict):
+                name = first.get("model") or first.get("id")
+            elif isinstance(first, str):
+                name = first
         _model_cache[port] = (now, name)
         return name
     except Exception:
@@ -281,6 +375,21 @@ def take_last_usage() -> dict | None:
 @router.get("/status")
 def status():
     return server_status()
+
+
+@router.get("/servers")
+def list_local_servers():
+    """Every local OpenAI-compatible server we can reach, not just our own.
+
+    Detection previously covered only the four ports Conductor starts
+    llama-server on, so a user running Ollama or LM Studio saw nothing.
+    """
+    servers = detect_local_servers()
+    return {
+        "servers": servers,
+        "scanned_ports": list(discovery_ports()),
+        "managed_ports": list(MANAGED_PORTS),
+    }
 
 
 @router.get("/models")
@@ -428,8 +537,10 @@ def stop_server():
     _proc = None
     _proc_port = None
     _model_cache.clear()
-    # also kill any stray llama-server on our port range (prior-run orphans)
-    for port in range(DEFAULT_PORT, DEFAULT_PORT + MAX_TRY_PORTS):
+    # Also kill stray llama-servers from prior runs - MANAGED_PORTS only.
+    # Never widen this to discovery_ports(): shutting down a port we did not
+    # start would kill the user's own Ollama / LM Studio instance.
+    for port in MANAGED_PORTS:
         if _health_ok(port):
             try:
                 import urllib.request as u
