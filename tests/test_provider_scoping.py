@@ -36,15 +36,15 @@ def test_models_are_scoped_to_requested_provider(client):
 def test_provider_change_revalidates_known_cross_provider_model(client):
     first = client.post("/api/chat/config", json={"provider": "openai", "model": "gpt-4o-mini"})
     assert first.status_code == 200
-    switched = client.post("/api/chat/config", json={"provider": "anthropic"})
+    switched = client.post("/api/chat/config", json={"provider": "mistral"})
     assert switched.status_code == 200
-    assert switched.json()["model"] == providers.HOSTED_PROVIDERS["anthropic"]["default_model"]
+    assert switched.json()["model"] == providers.HOSTED_PROVIDERS["mistral"]["default_model"]
 
 
 def test_chat_rejects_known_cross_provider_model_before_request(client):
     response = client.post("/api/chat", json={
         "message": "hello",
-        "provider": "anthropic",
+        "provider": "mistral",
         "model": providers.HOSTED_PROVIDERS["openai"]["default_model"],
     })
     assert response.status_code == 400

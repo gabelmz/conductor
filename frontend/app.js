@@ -348,7 +348,7 @@ function wireShell() {
       if (b.dataset.pane === "models") loadModels();
     }),
   );
-  $("#btn-models-refresh").addEventListener("click", loadModels);
+  $("#btn-models-refresh").addEventListener("click", () => loadModels(true));
   $("#btn-pane-close").addEventListener("click", () => {
     const rp = $("#right-pane");
     rp.style.display = rp.style.display === "none" ? "" : "none";
@@ -8288,11 +8288,25 @@ async function renderWorkflows() {
 
 /* ----------------------------------------------------------------- Models
    Right-pane "Models" tab — local GGUF discovery + provider models. */
-async function loadModels() {
+async function loadModels(force = false) {
   const list = $("#models-list");
   if (!list) return;
-  list.innerHTML = '<div class="folder-loading">Loading models…</div>';
+  list.innerHTML = `<div class="folder-loading">${force ? "Pulling model lists from provider endpoints…" : "Loading models…"}</div>`;
   try {
+    if (force) {
+      // Re-pull FROM THE ENDPOINT. Without this the panel only re-rendered
+      // whatever was already cached, so Refresh could never surface a model
+      // that the provider had added since the last pull.
+      try {
+        const refreshed = await api("/api/chat/catalog/refresh", { method: "POST", body: {} });
+        const c = refreshed.counts || {};
+        if (c.error) {
+          toast(`${c.endpoint || 0} provider(s) refreshed, ${c.error} unreachable`, "warn");
+        }
+      } catch (e) {
+        toast(`Catalog refresh failed: ${e.message}`, "error");
+      }
+    }
     const [disc, provs, cfg] = await Promise.all([
       api("/api/llama/discover?force=true"),
       api("/api/chat/providers"),

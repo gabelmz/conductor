@@ -100,8 +100,22 @@ def seed_defaults() -> None:
     conn.commit()
 
 
+# Providers removed from the app catalog. Seeding is upsert-only, so without an
+# explicit prune their rows would survive in spine_model_catalog forever and keep
+# showing up in the picker. Scoped to an explicit list rather than "anything not
+# in HOSTED_PROVIDERS" so it can never delete a provider the user added.
+RETIRED_PROVIDER_IDS = ("anthropic",)
+
+
+def _prune_retired_providers(conn, _now: str) -> None:
+    for pid in RETIRED_PROVIDER_IDS:
+        conn.execute("DELETE FROM spine_model_catalog WHERE provider_id = ?", (pid,))
+        conn.execute("DELETE FROM spine_model_presets WHERE provider_id = ?", (pid,))
+
+
 def _seed_models(conn, now: str) -> None:
     import providers
+    _prune_retired_providers(conn, now)
     for pid, meta in providers.HOSTED_PROVIDERS.items():
         model_id = meta["default_model"]
         capabilities = ["chat", "completions"]

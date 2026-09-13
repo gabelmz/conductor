@@ -27,7 +27,7 @@ const PKG = JSON.parse(
   readFileSync(join(ROOT, "desktop", "package.json"), "utf-8"),
 );
 
-const HOSTED = ["anthropic", "openai", "grok", "deepseek"];
+const HOSTED = ["openai", "grok", "deepseek", "mistral"];
 
 function sha256(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");

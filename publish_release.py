@@ -12,7 +12,7 @@ TITLE = "v2.0.0: Local-First Spine, Multi-Provider AI Registry & Team KPIs"
 BODY = """# Conductor v2.0.0 Release
 
 ### Key Highlights
-- **Multi-Provider AI Registry**: 22 AI provider presets (OpenAI, Anthropic, Gemini, OpenRouter, DeepSeek, Grok, HuggingFace, Venice AI, Groq, Together, Mistral, Perplexity, Fireworks, Cohere, Replicate, SiliconFlow, DashScope, Novita, Moonshot, 01.AI, Ollama, LM Studio) with embeddings and streaming.
+- **Multi-Provider AI Registry**: 22 AI provider presets (OpenAI, Gemini, OpenRouter, DeepSeek, Grok, HuggingFace, Venice AI, Groq, Together, Mistral, Perplexity, Fireworks, Cohere, Replicate, SiliconFlow, DashScope, Novita, Moonshot, 01.AI, NVIDIA NIM, Ollama, LM Studio) with embeddings and streaming.
 - **Local-First Spine Architecture**: SQLite local spine for model catalog, presets, node library, feature registry, datasets, filters, statuses, and lifecycles — mirrored to Supabase `conductor.*` schema.
 - **Team-First Asana KPI Engine**: 73 workbook KPI definitions, membership facts, SLA adherence, and team pivot scorecards.
 - **Suggested-vs-Live Catalog Comparison**: Levenshtein, Soundex, and SequenceMatcher fuzzy matching with 48-hour freshness tracking.

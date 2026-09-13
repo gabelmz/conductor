@@ -502,6 +502,39 @@ def list_all_models(provider: str | None = None, all_providers: bool = Query(Fal
     return {"providerId": None, "models": models, "source": "all-configured"}
 
 
+@router.post("/catalog/refresh")
+def refresh_model_catalog(body: dict | None = None):
+    """Re-pull model lists FROM PROVIDER ENDPOINTS. Backs the Refresh button.
+
+    Every entry reports where its list actually came from, so the UI can tell
+    a live endpoint pull apart from an unconfigured provider's placeholder.
+    """
+    import providers
+
+    body = body or {}
+    requested = body.get("providers") or body.get("provider")
+    if isinstance(requested, str):
+        requested = [requested]
+    results = providers.refresh_catalog(requested)
+    return {
+        "providers": results,
+        "counts": {
+            "endpoint": sum(1 for r in results.values() if r["source"] == "endpoint"),
+            "error": sum(1 for r in results.values() if r["source"] == "error"),
+            "curated": sum(1 for r in results.values() if r["source"] == "curated"),
+        },
+        "totalModels": sum(len(r["models"]) for r in results.values()),
+    }
+
+
+@router.get("/catalog")
+def get_model_catalog():
+    """Last pulled catalog, per provider, with provenance and timestamps."""
+    import providers
+
+    return {"providers": providers.read_catalog_cache()}
+
+
 @router.post("/embeddings")
 @router.post("/embed")
 async def create_embeddings(body: dict):

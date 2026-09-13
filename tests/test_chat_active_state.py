@@ -46,7 +46,7 @@ def test_default_model_matches_spine_active_state_source():
 
 def test_explicit_saved_selection_is_never_overridden():
     (tmp_path_cfg := chat.CONFIG_PATH).parent.mkdir(parents=True, exist_ok=True)
-    chat._save_config({"provider": "anthropic", "model": "claude-3-7-sonnet-20250219"})
+    chat._save_config({"provider": "mistral", "model": "mistral-large-latest"})
     cfg = chat._load_config()
-    assert cfg["provider"] == "anthropic"
-    assert cfg["model"] == "claude-3-7-sonnet-20250219"
+    assert cfg["provider"] == "mistral"
+    assert cfg["model"] == "mistral-large-latest"

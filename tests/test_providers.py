@@ -11,7 +11,6 @@ def test_hosted_providers_presets_count():
     preset_ids = set(providers.HOSTED_PROVIDERS.keys())
     required = {
         "openai",
-        "anthropic",
         "gemini",
         "openrouter",
         "deepseek",

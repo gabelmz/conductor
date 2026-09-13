@@ -1,7 +1,7 @@
 """Conductor — multi-provider chat & embedding registry.
 
 Brings multi-provider architecture into Conductor's FastAPI backend:
-- Presets for 22 top providers: OpenAI, Anthropic, Google Gemini, OpenRouter, DeepSeek,
+- Presets for 22 top providers: OpenAI, Google Gemini, OpenRouter, DeepSeek,
   xAI (Grok), HuggingFace, Venice AI, Groq, Together AI, Mistral AI, Perplexity AI,
   Fireworks AI, Cohere, Replicate, SiliconFlow, Qwen (DashScope), Novita AI, Ollama,
   LM Studio, Moonshot AI, 01.AI.
@@ -36,14 +36,6 @@ HOSTED_PROVIDERS: dict[str, dict] = {
         "default_model": "gpt-4o-mini",
         "default_embedding_model": "text-embedding-3-small",
         "kind": "openai-compatible",
-    },
-    "anthropic": {
-        "label": "Anthropic (Claude)",
-        "base_url": "https://api.anthropic.com",
-        "env_key": "ANTHROPIC_API_KEY",
-        "default_model": "claude-3-7-sonnet-20250219",
-        "default_embedding_model": "",
-        "kind": "anthropic",
     },
     "gemini": {
         "label": "Google Gemini",
@@ -415,11 +407,12 @@ class OpenAICompatAdapter:
                     if mid.startswith("models/"):
                         mid = mid[7:]
                     models.append({"id": mid, "providerId": self.id})
-            if models:
-                return models
-        except Exception:
-            pass
-        return [{"id": self.default_model, "providerId": self.id}]
+            return models
+        except Exception as exc:
+            # Never substitute the hardcoded default here. Doing so made a dead
+            # endpoint indistinguishable from a one-model endpoint, so clicking
+            # Refresh appeared to succeed while showing a stale curated id.
+            raise ProviderListError(self.id, str(exc)) from exc
 
     def health(self) -> dict:
         start = time.time()
@@ -485,103 +478,6 @@ class OpenAICompatAdapter:
                         yield {"type": "thinking", "text": delta["reasoning"]}
                     if delta.get("content"):
                         yield {"type": "text", "text": delta["content"]}
-        except urllib.error.HTTPError as exc:
-            yield {"type": "error", "code": f"HTTP_{exc.code}", "message": _http_error_detail(exc)}
-        except Exception as exc:
-            yield {"type": "error", "code": type(exc).__name__, "message": str(exc)}
-
-
-class AnthropicAdapter:
-    """Native Anthropic Messages API — content blocks, thinking deltas, usage."""
-
-    API_VERSION = "2023-06-01"
-
-    def __init__(self, provider_id: str, base_url: str, api_key: str, default_model: str):
-        self.id = provider_id
-        self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
-        self.default_model = default_model
-
-    def list_models(self) -> list[dict]:
-        req = urllib.request.Request(
-            f"{self.base_url}/v1/models",
-            headers={"x-api-key": self.api_key, "anthropic-version": self.API_VERSION},
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=6) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            return [{"id": m.get("id"), "providerId": self.id} for m in data.get("data", []) if m.get("id")]
-        except Exception:
-            return [{"id": self.default_model, "providerId": self.id}]
-
-    def health(self) -> dict:
-        start = time.time()
-        try:
-            self.list_models()
-            return {"healthy": True, "latencyMs": int((time.time() - start) * 1000)}
-        except Exception as exc:
-            return {"healthy": False, "latencyMs": int((time.time() - start) * 1000), "error": str(exc)}
-
-    def embed(self, input_val: str | list[str], model: str | None = None) -> dict:
-        raise ValueError(
-            "Anthropic API does not offer native embeddings. Use OpenAI, Gemini, OpenRouter, HuggingFace, Cohere, etc."
-        )
-
-    def stream_chat(
-        self, messages: list[dict], model: str, max_tokens: int = 1200, temperature: float = 0.6
-    ):
-        payload = {
-            "model": model,
-            "messages": [m for m in messages if m.get("role") != "system"],
-            "system": "\n".join(m["content"] for m in messages if m.get("role") == "system"),
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": True,
-        }
-        req = urllib.request.Request(
-            f"{self.base_url}/v1/messages",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": self.api_key,
-                "anthropic-version": self.API_VERSION,
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=600) as resp:
-                event_name = None
-                buf = b""
-                for raw in resp:
-                    buf += raw
-                    while b"\n" in buf:
-                        line, buf = buf.split(b"\n", 1)
-                        text = line.decode("utf-8", errors="replace").strip()
-                        if text.startswith("event:"):
-                            event_name = text[6:].strip()
-                        elif text.startswith("data:"):
-                            payload_str = text[5:].strip()
-                            try:
-                                obj = json.loads(payload_str)
-                            except json.JSONDecodeError:
-                                event_name = None
-                                continue
-                            if obj.get("type") == "content_block_start":
-                                block = obj.get("content_block") or {}
-                            elif obj.get("type") == "content_block_delta":
-                                delta = obj.get("delta") or {}
-                                if delta.get("type") == "thinking_delta":
-                                    yield {"type": "thinking", "text": delta.get("thinking", "")}
-                                elif delta.get("type") == "text_delta":
-                                    yield {"type": "text", "text": delta.get("text", "")}
-                            elif obj.get("type") == "message_delta":
-                                usage = obj.get("usage") or {}
-                                yield {
-                                    "type": "usage",
-                                    "prompt_tokens": usage.get("input_tokens") or 0,
-                                    "completion_tokens": usage.get("output_tokens") or 0,
-                                }
-                            event_name = None
         except urllib.error.HTTPError as exc:
             yield {"type": "error", "code": f"HTTP_{exc.code}", "message": _http_error_detail(exc)}
         except Exception as exc:
@@ -687,8 +583,6 @@ def build_adapter(provider_id: str, api_key: str | None) -> object | None:
         return ProxyAdapter(provider_id, base_url, auth, default_model)
     if not api_key and not is_local_endpoint(base_url):
         return None
-    if meta["kind"] == "anthropic":
-        return AnthropicAdapter(provider_id, base_url, api_key or "", default_model)
     return OpenAICompatAdapter(provider_id, base_url, api_key or "", default_model, default_embedding_model)
 
 
@@ -710,6 +604,91 @@ def registry() -> dict[str, object]:
     return out
 
 
+class ProviderListError(RuntimeError):
+    """An endpoint could not be enumerated. Carries the provider for the UI."""
+
+    def __init__(self, provider_id: str, message: str) -> None:
+        super().__init__(message)
+        self.provider_id = provider_id
+        self.message = message
+
+
+CATALOG_CACHE_PATH = DATA_DIR / "model-catalog.json"
+
+
+def read_catalog_cache() -> dict:
+    return _read_json(CATALOG_CACHE_PATH)
+
+
+def _write_catalog_cache(provider_id: str, entry: dict) -> None:
+    cache = _read_json(CATALOG_CACHE_PATH)
+    cache[provider_id] = entry
+    _write_json(CATALOG_CACHE_PATH, cache)
+
+
+def fetch_provider_models(provider_id: str, use_cache: bool = True) -> dict:
+    """Pull one provider's model list FROM ITS ENDPOINT.
+
+    Returns {models, source, error, fetchedAt}. `source` is:
+      endpoint     - live from the provider's model-list API (the real thing)
+      cache        - last successful endpoint pull, endpoint currently failing
+      curated      - provider not configured, so nothing could be pulled
+      disabled     - turned off in provider config
+      error        - configured, endpoint failed, and no cache exists
+
+    A configured provider NEVER silently falls back to the hardcoded default:
+    that is what made Refresh look successful while showing stale ids.
+    """
+    if provider_id not in HOSTED_PROVIDERS:
+        raise ValueError(f"Unknown provider '{provider_id}'")
+
+    cfg = read_provider_config(provider_id)
+    if cfg.get("enabled") is False:
+        return {"models": [], "source": "disabled", "error": None, "fetchedAt": None}
+
+    adapter = build_adapter(provider_id, resolve_api_key(provider_id))
+    if not adapter:
+        default_model = cfg.get("defaultModelId") or HOSTED_PROVIDERS[provider_id]["default_model"]
+        return {
+            "models": [{"id": default_model, "providerId": provider_id}],
+            "source": "curated",
+            "error": "Provider is not configured, so its model list was not pulled.",
+            "fetchedAt": None,
+        }
+
+    try:
+        models = adapter.list_models() or []
+        entry = {
+            "models": models,
+            "source": "endpoint",
+            "error": None,
+            "fetchedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        _write_catalog_cache(provider_id, entry)
+        return entry
+    except Exception as exc:
+        message = getattr(exc, "message", None) or str(exc)
+        if use_cache:
+            cached = read_catalog_cache().get(provider_id)
+            if cached and cached.get("models"):
+                return {**cached, "source": "cache", "error": message}
+        return {"models": [], "source": "error", "error": message, "fetchedAt": None}
+
+
+def refresh_catalog(provider_ids: list[str] | None = None) -> dict:
+    """Re-pull model lists from provider endpoints. Backs the Refresh button."""
+    targets = provider_ids or list(HOSTED_PROVIDERS.keys())
+    out: dict[str, dict] = {}
+    for pid in targets:
+        if pid not in HOSTED_PROVIDERS:
+            continue
+        try:
+            out[pid] = fetch_provider_models(pid, use_cache=False)
+        except Exception as exc:
+            out[pid] = {"models": [], "source": "error", "error": str(exc), "fetchedAt": None}
+    return out
+
+
 def list_provider_models(provider_id: str) -> tuple[list[dict], str]:
     """Return one provider's normalized model catalog without exposing keys.
 
@@ -720,21 +699,11 @@ def list_provider_models(provider_id: str) -> tuple[list[dict], str]:
     if provider_id not in HOSTED_PROVIDERS:
         raise ValueError(f"Unknown provider '{provider_id}'")
 
-    cfg = read_provider_config(provider_id)
-    if cfg.get("enabled") is False:
+    result = fetch_provider_models(provider_id)
+    raw_models = result["models"]
+    source = result["source"]
+    if source == "disabled":
         return [], "disabled"
-    default_model = cfg.get("defaultModelId") or HOSTED_PROVIDERS[provider_id]["default_model"]
-    adapter = build_adapter(provider_id, resolve_api_key(provider_id))
-    source = "local" if is_local_endpoint(effective_base_url(provider_id)) else "provider-api"
-    raw_models: list[dict] = []
-    if adapter:
-        try:
-            raw_models = adapter.list_models() or []
-        except Exception:
-            raw_models = []
-    if not raw_models:
-        raw_models = [{"id": default_model, "providerId": provider_id}]
-        source = "curated"
 
     seen: set[str] = set()
     models: list[dict] = []
@@ -764,10 +733,14 @@ def model_is_allowed(provider_id: str, model_id: str) -> bool:
     candidate = str(model_id or "").strip()
     if not candidate:
         return True
-    models, _source = list_provider_models(provider_id)
+    models, source = list_provider_models(provider_id)
     if any(model["id"] == candidate for model in models):
         return True
-    if build_adapter(provider_id, resolve_api_key(provider_id)):
+    # Only a SUCCESSFUL enumeration is authoritative. If the endpoint could not
+    # be reached (error/cache/curated) we have not proven the model is invalid,
+    # and rejecting here would break chat for every offline user or flaky
+    # provider. Fall through to the cross-provider check instead.
+    if source == "endpoint" and build_adapter(provider_id, resolve_api_key(provider_id)):
         return False
     foreign_defaults = {
         meta["default_model"]
