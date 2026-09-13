@@ -20,7 +20,10 @@ from fastapi import APIRouter, HTTPException, Query
 import storage
 
 ATTACHMENT_EXCEL = Path(
-    r"C:\Users\GabeMaher\AppData\Local\hermes\profiles\sammy\attachments\Global KPIs (1).xlsx"
+    os.environ.get(
+        "CONDUCTOR_KPI_SEED",
+        r"C:\Users\GabeMaher\AppData\Local\hermes\profiles\sammy\attachments\Global KPIs (1).xlsx",
+    )
 )
 
 kpi_router = APIRouter(prefix="/api/kpis", tags=["kpi-performance"])
@@ -85,6 +88,11 @@ def seed_kpis_from_excel(force: bool = False) -> int:
         return existing_count
 
     if not ATTACHMENT_EXCEL.exists():
+        import logging
+        logging.getLogger(__name__).warning(
+            "KPI seed file not found at %s — set CONDUCTOR_KPI_SEED to seed the KPI dashboard.",
+            ATTACHMENT_EXCEL,
+        )
         return 0
 
     try:

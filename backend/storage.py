@@ -2,6 +2,7 @@
 import contextlib
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -1264,7 +1265,10 @@ def asana_summary() -> dict:
             {"priority": k, "count": v}
             for k, v in sorted(priority_map.items(), key=lambda x: x[1], reverse=True)
         ]
-    except Exception:
-        pass
+    except Exception as exc:
+        # A malformed task should not take down the dashboard, but it must not
+        # silently zero every KPI either — log it so the failure is visible.
+        import logging
+        logging.getLogger(__name__).warning("asana_summary failed: %s", exc)
     return out
 

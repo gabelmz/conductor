@@ -97,6 +97,9 @@ def test_currency_int_pct_coercion():
     assert report_presets._coerce("$38,619.67", {"type": "currency"}) == 38619.67
     assert report_presets._coerce("433", {"type": "int"}) == 433
     assert report_presets._coerce("100.00%", {"type": "percent"}) == 1.0
+    assert report_presets._coerce("88.59%", {"type": "percent"}) == 0.8859
+    assert report_presets._coerce("0.024", {"type": "percent"}) == 0.024  # already fractional
+    assert report_presets._coerce("77", {"type": "percent"}) == 0.77        # bare percentage point
     assert report_presets._coerce("", {"type": "int"}) is None
 
 

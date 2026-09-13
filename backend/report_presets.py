@@ -624,9 +624,18 @@ def _coerce(value: Any, field: dict) -> Any:
     if ftype == "percent":
         cleaned = text.replace("%", "").replace(",", "").strip()
         try:
-            return float(cleaned) / 100.0
+            value = float(cleaned)
         except (TypeError, ValueError):
             return text
+        has_pct_sign = "%" in text
+        if has_pct_sign:
+            return value / 100.0
+        # No "%" sign: a value like "0.024" is already a fraction (reviews
+        # "Refund Rate(%)" ships as raw decimals), while "88.59" or "100" means
+        # a percentage point. Disambiguate by magnitude.
+        if abs(value) <= 1.0:
+            return value
+        return value / 100.0
     if ftype == "bool":
         return text.lower() in ("1", "yes", "true", "y", "on")
     return text

@@ -12,6 +12,8 @@ import json
 import os
 import sys
 import time
+import urllib.request
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -67,10 +69,25 @@ seed_kpis_from_excel()
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Start the background Asana→Supabase sync loop when the server boots.
+
+    Deferred import (as the previous @app.on_event handler did) so importing
+    main/app in tests never triggers live network calls; lifespan only fires
+    under an ASGI server / TestClient `with` block.
+    """
+    import sync_runner
+    sync_runner.start_background_loop()
+    yield
+
+
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
     version="2.5.7",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -157,8 +174,11 @@ def list_update_versions():
                     "published_at": r.get("published_at") or "",
                     "prerelease": bool(r.get("prerelease")),
                 })
-    except Exception:
-        pass
+    except Exception as exc:
+        # Never hard-fail the versions endpoint on a network/API error — the
+        # local release-history fallback below still returns a usable list.
+        import logging
+        logging.getLogger(__name__).warning("GitHub release check failed: %s", exc)
 
     # Ensure v1.9.5 and historical versions are present
     version_tags = [
@@ -535,16 +555,8 @@ def tasks_clear_done():
 # --------------------------------------------------------------------------
 # Asana sync (all of Asana → local SQLite store)
 # --------------------------------------------------------------------------
-@app.on_event("startup")
-def _start_background_asana_sync() -> None:
-    """Keep Supabase's conductor_records mirror (and local SQLite, via
-    asana_tasks_adapter.apply()) warm continuously so normal reads never need to hit the
-    live Asana API. Registered as a startup event, not run at import time, so importing
-    main/app in tests never triggers live network calls — no test wraps TestClient(app) in
-    a `with` block, so lifespan/startup events never fire during the test suite."""
-    import sync_runner
-    sync_runner.start_background_loop()
-
+# Background sync loop is started via the lifespan handler (see lifespan()
+# above), not an import-time or @app.on_event side effect.
 
 @app.get("/api/asana/status")
 def asana_status():
@@ -802,9 +814,19 @@ def _count_subtree(path, budget=2500) -> tuple[int, int, int]:
     return files, notes, buckets
 
 
+# Short-lived cache for the statusbar/dashboard poll — the statusbar hits
+# /api/stats every couple of seconds, so avoid re-running the full 2000-check /
+# 1000-task queries + live llama /props on every tick.
+_STATS_CACHE: dict = {"ts": 0.0, "payload": None}
+_STATS_CACHE_TTL = 3.0
+
+
 @app.get("/api/stats")
 def stats():
     """Aggregate stats for the home dashboard + statusbar."""
+    _now = time.monotonic()
+    if _STATS_CACHE["payload"] is not None and (_now - _STATS_CACHE["ts"]) < _STATS_CACHE_TTL:
+        return _STATS_CACHE["payload"]
     try:
         products = storage.count_products()
         checks_all = storage.list_checks(limit=2000)
@@ -888,7 +910,7 @@ def stats():
     # fall back to total agent count
     active_agents = agents
 
-    return {
+    payload = {
         "products": products,
         "checks": len(checks_all),
         "by_severity": by_sev,
@@ -920,6 +942,9 @@ def stats():
             "provider": {"name": model["provider"]},
         },
     }
+    _STATS_CACHE["ts"] = time.monotonic()
+    _STATS_CACHE["payload"] = payload
+    return payload
 
 
 @app.get("/api/vault/tree")
