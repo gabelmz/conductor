@@ -151,10 +151,6 @@
 
           <!-- ============ Composer ============ -->
           <div class="composer-shell" id="composer-shell">
-            <div class="composer-ai" id="composer-ai" hidden>
-              <select id="composer-provider" title="AI provider" aria-label="AI provider"></select>
-              <select id="composer-model" title="Model" aria-label="Model"></select>
-            </div>
             <div class="chat-context" id="chat-context" hidden></div>
             <div class="composer" id="composer">
               <div class="composer-attach">
@@ -236,13 +232,12 @@
         <div class="status-left">
           <span class="status-dot" id="status-dot"></span>
           <span id="status-text">Connected</span>
+          <span class="status-sep">·</span>
+          <span id="status-model" title="AI model in use">—</span>
         </div>
         <div class="status-right">
           <button class="status-btn" id="btn-reports" title="Report Management" aria-label="Report Management"><span class="codicon codicon-graph"></span></button>
           <button class="status-btn" id="btn-guidelines" title="Attribute Guidelines" aria-label="Attribute Guidelines"><span class="codicon codicon-symbol-property"></span></button>
-          <span class="status-sep">·</span>
-          <span id="status-model" title="AI model in use">—</span>
-          <span class="status-sep">·</span>
           <span id="status-tokens" title="Tokens used by the model">—</span>
           <span class="status-sep">·</span>
           <span id="status-conn" title="Connections: llama server, Asana sync, database, automations">—</span>

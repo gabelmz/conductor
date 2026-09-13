@@ -291,7 +291,8 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 400));
     check('split: exit restores full view', await q(`!document.body.classList.contains('split-mode')`));
 
-    check('composer: AI bar hidden with no keyed providers', await q(`document.querySelector('#composer-ai').hidden === true`));
+    check('composer: model selector removed from chat page', await q(`document.querySelector('#composer-ai') === null && document.querySelector('#composer-provider') === null && document.querySelector('#composer-model') === null`));
+    check('statusbar: model id sits in the left group beside the version', await q(`!!document.querySelector('.status-left #status-model') && !!document.querySelector('.status-left #status-text')`));
     check('composer: attach button intact', await q(`!!document.querySelector('#btn-attach')`));
     const skillPop = await q(`(async () => {
       const btn = document.querySelector('#btn-skills');

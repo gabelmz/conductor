@@ -490,11 +490,12 @@ async function sendChat() {
     '<span class="thinking"><span></span><span></span><span></span></span>',
   );
 
-  const provider =
-    ($("#composer-provider") && $("#composer-provider").value) ||
-    state.chatProvider ||
-    "deepseek";
-  const model = ($("#composer-model") && $("#composer-model").value) || "";
+  // The chat page no longer carries its own model selector. The saved chat
+  // target is the single source of truth, which also removes the old
+  // three-way disagreement between this select, data/chat.json, and the
+  // spine preferred target.
+  const provider = state.chatProvider || "";
+  const model = state.chatModel || "";
   const apiKey = await resolveChatKey(provider);
 
   try {
@@ -2113,7 +2114,66 @@ const ACTIVITY_JOB_META = {
   asana_sync: { icon: "sync", title: "Asana sync" },
   parse_catalog: { icon: "cloud-upload", title: "Catalog import" },
   ai_process: { icon: "chat-sparkle", title: "AI processing" },
+  model_install: { icon: "cloud-download", title: "Model install" },
+  model_run: { icon: "vm-running", title: "Model running" },
+  dependency_install: { icon: "package", title: "Dependency install" },
+  report_generate: { icon: "graph", title: "Report generated" },
+  supabase_sync: { icon: "cloud", title: "Supabase sync" },
+  flatfile_import: { icon: "table", title: "Flat file import" },
+  listing_import: { icon: "list-unordered", title: "Listing import" },
+  webhook_ingest: { icon: "radio-tower", title: "Webhook ingest" },
 };
+
+// Prefer a server-supplied label/type over guessing from the job kind, so the
+// card says what the data actually IS (live product data, a report type, ...)
+// rather than defaulting everything to a catalog-shaped noun.
+function activityLabel(job) {
+  if (job.label) return { icon: job.icon || "gear", title: job.label };
+  const meta = ACTIVITY_JOB_META[job.kind];
+  if (meta) return meta;
+  const pretty = String(job.kind || "job")
+    .replace(/[_-]+/g, " ")
+    .replace(/\w/g, (c) => c.toUpperCase());
+  return { icon: "gear", title: pretty };
+}
+
+// Bottom-of-feed card showing what model is running right now, across every
+// local runtime we can reach - not just the bundled server.
+async function modelRunningCard() {
+  try {
+    const [servers, cfg] = await Promise.all([
+      api("/api/llama/servers").catch(() => ({ servers: [] })),
+      api("/api/chat/config").catch(() => ({})),
+    ]);
+    const running = servers.servers || [];
+    const target =
+      cfg.provider ? `${esc(cfg.provider)}${cfg.model ? " / " + esc(cfg.model) : ""}` : "not configured";
+    const rows =
+      running.length ?
+        running
+          .map(
+            (srv) =>
+              `<div class="activity-card-msg">port ${esc(String(srv.port))} · ${esc(srv.model || "no model loaded")}${srv.managed ? " · managed" : ""}</div>`,
+          )
+          .join("")
+      : '<div class="activity-card-msg">No local model server detected.</div>';
+    const status = running.length ? "running" : "idle";
+    return `<div class="activity-section-label">Model</div>
+      <div class="activity-card activity-card-${status}">
+        <span class="codicon codicon-vm-running"></span>
+        <div class="activity-card-body">
+          <div class="activity-card-head">
+            <span class="activity-card-title">Model running</span>
+            <span class="pill-int pill-int-activity-${status}">${status}</span>
+          </div>
+          <div class="activity-card-msg">Chat target: ${target}</div>
+          ${rows}
+        </div>
+      </div>`;
+  } catch {
+    return "";
+  }
+}
 
 function activityCard(r) {
   const pct = Math.max(0, Math.min(100, Number(r.progress) || 0));
@@ -2146,7 +2206,7 @@ async function loadActivity() {
     ]);
     const items = [];
     (jobs || []).forEach((j) => {
-      const meta = ACTIVITY_JOB_META[j.kind] || { icon: "gear", title: j.kind };
+      const meta = activityLabel(j);
       const active = j.status === "running" || j.status === "queued";
       items.push({
         t: j.updated_at || j.created_at,
@@ -2195,7 +2255,10 @@ async function loadActivity() {
       html += `<div class="activity-section-label">Active now (${activeItems.length})</div>${activeItems.map(activityCard).join("")}`;
     if (restItems.length)
       html += `<div class="activity-section-label">Recent</div>${restItems.map(activityCard).join("")}`;
-    box.innerHTML = html || '<div class="empty-state">No activity yet.</div>';
+    if (!html) html = '<div class="empty-state">No activity yet.</div>';
+    // "model running" card pins to the BOTTOM of the feed
+    html += await modelRunningCard();
+    box.innerHTML = html;
   } catch (e) {
     box.innerHTML = `<div class="folder-error">${esc(e.message)}</div>`;
   }
@@ -3024,84 +3087,23 @@ async function refreshCounts() {
 
 /* ----------------------------------------------------------------- boot */
 async function initAiComposer() {
-  const provSel = $("#composer-provider"),
-    modelSel = $("#composer-model");
-  if (!provSel || !modelSel) return;
+  // The chat page has no model selector any more. This now just resolves the
+  // active chat target once and mirrors it into state + the status bar, so the
+  // saved configuration is the single source of truth for what model runs.
   try {
-    const saved = JSON.parse(localStorage.getItem("conductor.chat") || "{}");
-    const [provs, cfg] = await Promise.all([
-      api("/api/chat/providers"),
-      api("/api/chat/config"),
-    ]);
-    const allProviders = provs.providers || [];
-    if (!allProviders.length) return;
-    const configured = allProviders.filter((p) => p.configured);
-    const unconfigured = allProviders.filter((p) => !p.configured);
-    let html = "";
-    if (configured.length) {
-      html +=
-        '<optgroup label="Configured">' +
-        configured
-          .map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`)
-          .join("") +
-        "</optgroup>";
+    const cfg = await api("/api/chat/config");
+    state.chatProvider = cfg.provider || "";
+    state.chatModel = cfg.model || "";
+    // Drop the legacy per-browser override that used to compete with the
+    // saved config and the spine preferred target.
+    try {
+      localStorage.removeItem("conductor.chat");
+    } catch {
+      /* private mode */
     }
-    if (unconfigured.length) {
-      html +=
-        '<optgroup label="Presets (Needs Key)">' +
-        unconfigured
-          .map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`)
-          .join("") +
-        "</optgroup>";
-    }
-    html +=
-      '<optgroup label="Local Engine"><option value="llama">Local Llama</option></optgroup>';
-    provSel.innerHTML = html;
-    modelSel.innerHTML = "";
-    const refreshModels = () => {
-      const pid = provSel.value;
-      const p = allProviders.find((x) => x.id === pid);
-      modelSel.innerHTML =
-        p && p.models && p.models.length ?
-          p.models
-            .map((m) => `<option value="${esc(m.id)}">${esc(m.id)}</option>`)
-            .join("")
-        : `<option value="">${esc((p && p.defaultModelId) || cfg.model || "")}</option>`;
-      if (
-        saved.model &&
-        modelSel.querySelector(`option[value="${CSS.escape(saved.model)}"]`)
-      )
-        modelSel.value = saved.model;
-    };
-    provSel.value =
-      (
-        saved.provider &&
-        provSel.querySelector(`option[value="${CSS.escape(saved.provider)}"]`)
-      ) ?
-        saved.provider
-      : cfg.provider || "deepseek";
-    provSel.addEventListener("change", refreshModels);
-    refreshModels();
-    state.chatProvider = provSel.value;
-    state.chatModel = modelSel.value;
-    provSel.addEventListener("change", () => {
-      state.chatProvider = provSel.value;
-      state.chatModel = modelSel.value;
-      localStorage.setItem(
-        "conductor.chat",
-        JSON.stringify({ provider: provSel.value, model: modelSel.value }),
-      );
-    });
-    modelSel.addEventListener("change", () => {
-      state.chatModel = modelSel.value;
-      localStorage.setItem(
-        "conductor.chat",
-        JSON.stringify({ provider: provSel.value, model: modelSel.value }),
-      );
-    });
-    $("#composer-ai").hidden = false;
+    refreshStatusbar();
   } catch {
-    /* keep bar hidden */
+    /* chat target stays empty; the backend resolves a default */
   }
 }
 
@@ -3586,6 +3588,69 @@ function vvValidate(root) {
    ================================================================ */
 let reportsViewMode = "gallery";
 
+// Column visibility + tier filter are VIEW state only. The report set itself is
+// always fetched in full and never narrowed by a filter - the owner requirement
+// is that filtering must never reduce the available report set, so every filter
+// is applied to the rendering and the unfiltered total stays on screen.
+const REPORT_COLUMNS = [
+  { key: "id", label: "#", required: true },
+  { key: "title", label: "Title", required: true },
+  { key: "kind", label: "Kind" },
+  { key: "tier", label: "Tier" },
+  { key: "asins", label: "ASINs" },
+  { key: "created", label: "Generated" },
+];
+const REPORT_TIERS = ["critical", "high", "warning", "info", "ok"];
+
+function reportsVisibleColumns() {
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem("conductor.reports.cols") || "null");
+  } catch {
+    /* private mode */
+  }
+  const all = REPORT_COLUMNS.map((c) => c.key);
+  if (!Array.isArray(saved)) return new Set(all);
+  const keep = new Set(saved.filter((k) => all.includes(k)));
+  REPORT_COLUMNS.filter((c) => c.required).forEach((c) => keep.add(c.key));
+  return keep;
+}
+
+function setReportsVisibleColumns(keys) {
+  try {
+    localStorage.setItem("conductor.reports.cols", JSON.stringify([...keys]));
+  } catch {
+    /* private mode */
+  }
+}
+
+let reportsTierFilter = new Set();
+
+// Reports carry several unreconciled vocabularies (CDQ grades A-U, action
+// priorities P0-P2, finding tone). Prefer a backend-normalized tier when it is
+// present and fall back to deriving one, so the filter works either way.
+function reportTier(r) {
+  if (r.tier) return String(r.tier).toLowerCase();
+  const grade = (r.summary && (r.summary.grade || r.summary.overall_grade)) || r.meta?.grade;
+  if (grade) {
+    const g = String(grade).toUpperCase()[0];
+    if (g === "A") return "ok";
+    if (g === "B") return "info";
+    if (g === "C") return "warning";
+    if (g === "D") return "high";
+    return "critical";
+  }
+  const score = r.summary?.cdq_score ?? r.meta?.cdq_score;
+  if (typeof score === "number") {
+    if (score >= 85) return "ok";
+    if (score >= 70) return "info";
+    if (score >= 55) return "warning";
+    if (score >= 40) return "high";
+    return "critical";
+  }
+  return "info";
+}
+
 async function renderReports() {
   const root = $("#view-root");
   let list = [];
@@ -3594,24 +3659,36 @@ async function renderReports() {
   } catch {
     /* */
   }
+  const cols = reportsVisibleColumns();
+  const totalCount = list.length;
+  const shown =
+    reportsTierFilter.size ? list.filter((r) => reportsTierFilter.has(reportTier(r))) : list;
+  const cell = {
+    id: (r) => `<td class="mono">${esc(r.id)}</td>`,
+    title: (r) => `<td>${esc(r.title)}</td>`,
+    kind: (r) => `<td><span class="chip-kind k-enrichment">${esc(r.kind)}</span></td>`,
+    tier: (r) =>
+      `<td><span class="pill-int pill-int-activity-${esc(reportTier(r))}">${esc(reportTier(r))}</span></td>`,
+    asins: (r) =>
+      `<td class="mono">${r.meta && r.meta.asin_count != null ? fmtNum(r.meta.asin_count) : "—"}</td>`,
+    created: (r) => `<td>${fmtTime(r.created_at)}</td>`,
+  };
+  const activeCols = REPORT_COLUMNS.filter((c) => cols.has(c.key));
+  const colSpan = activeCols.length + 1;
   const rows =
-    list.length ?
-      list
+    shown.length ?
+      shown
         .map(
           (r) => `
       <tr>
-        <td class="mono">${esc(r.id)}</td>
-        <td>${esc(r.title)}</td>
-        <td><span class="chip-kind k-enrichment">${esc(r.kind)}</span></td>
-        <td class="mono">${r.meta && r.meta.asin_count != null ? fmtNum(r.meta.asin_count) : "—"}</td>
-        <td>${fmtTime(r.created_at)}</td>
+        ${activeCols.map((c) => cell[c.key](r)).join("")}
         <td><button class="btn-mini" data-view-report="${r.id}">View</button> <button class="btn-mini" data-rerun-report="${r.id}">Rerun</button> <button class="btn-mini btn-mini-danger" data-del-report="${r.id}">Delete</button></td>
       </tr>`,
         )
         .join("")
-    : `<tr><td colspan="6" class="vv-empty">No reports yet — generate a CDQ Analysis to get started.</td></tr>`;
-  const cards = list.length
-    ? list
+    : `<tr><td colspan="${colSpan}" class="vv-empty">${totalCount ? "No reports match this tier filter — the other reports are still available, clear the filter to see them." : "No reports yet — generate a CDQ Analysis to get started."}</td></tr>`;
+  const cards = shown.length
+    ? shown
         .map(
           (r) => `
         <article class="cdq-card" style="min-width:14rem;flex:1;margin:0">
@@ -3635,12 +3712,56 @@ async function renderReports() {
           <button class="btn-primary" id="rpt-generate"><span class="codicon codicon-graph"></span> Generate CDQ Analysis</button>
         </div>
       </div>
-      <div class="view-actions" style="margin:0 0 0.5rem"><span class="view-sub">Reports</span><button class="btn-mini${reportsViewMode === "gallery" ? " active" : ""}" data-rpt-view="gallery">Gallery</button><button class="btn-mini${reportsViewMode === "list" ? " active" : ""}" data-rpt-view="list">List</button></div>
-      ${reportsViewMode === "gallery" ? `<div class="cdq-grid">${cards}</div>` : `<table class="data-table"><thead><tr><th>#</th><th>Title</th><th>Kind</th><th>ASINs</th><th>Generated</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
+      <div class="view-actions" style="margin:0 0 0.5rem;flex-wrap:wrap;gap:0.4rem">
+        <span class="view-sub">Reports</span>
+        <button class="btn-mini${reportsViewMode === "gallery" ? " active" : ""}" data-rpt-view="gallery">Gallery</button>
+        <button class="btn-mini${reportsViewMode === "list" ? " active" : ""}" data-rpt-view="list">List</button>
+        <span class="status-sep">·</span>
+        <span class="view-sub">Tier</span>
+        ${REPORT_TIERS.map(
+          (t) =>
+            `<button class="btn-mini${reportsTierFilter.has(t) ? " active" : ""}" data-rpt-tier="${t}">${t}</button>`,
+        ).join("")}
+        ${reportsTierFilter.size ? '<button class="btn-mini" data-rpt-tier-clear="1">Clear</button>' : ""}
+        <span class="status-sep">·</span>
+        <span class="view-sub">Columns</span>
+        ${REPORT_COLUMNS.map(
+          (c) =>
+            `<button class="btn-mini${cols.has(c.key) ? " active" : ""}${c.required ? " btn-mini-locked" : ""}" data-rpt-col="${c.key}"${c.required ? ' title="Always shown" disabled' : ""}>${esc(c.label)}</button>`,
+        ).join("")}
+        <span class="view-sub" style="margin-left:auto">Showing ${fmtNum(shown.length)} of ${fmtNum(totalCount)}${reportsTierFilter.size ? " (filtered view only — all reports remain available)" : ""}</span>
+      </div>
+      ${reportsViewMode === "gallery" ? `<div class="cdq-grid">${cards}</div>` : `<table class="data-table"><thead><tr>${activeCols.map((c) => `<th>${esc(c.label)}</th>`).join("")}<th></th></tr></thead><tbody>${rows}</tbody></table>`}
     </div>`;
   root.querySelectorAll("[data-rpt-view]").forEach((button) =>
     button.addEventListener("click", () => {
       reportsViewMode = button.dataset.rptView;
+      renderReports();
+    }),
+  );
+  root.querySelectorAll("[data-rpt-tier]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const t = button.dataset.rptTier;
+      if (reportsTierFilter.has(t)) reportsTierFilter.delete(t);
+      else reportsTierFilter.add(t);
+      renderReports();
+    }),
+  );
+  const clearBtn = root.querySelector("[data-rpt-tier-clear]");
+  if (clearBtn)
+    clearBtn.addEventListener("click", () => {
+      reportsTierFilter.clear();
+      renderReports();
+    });
+  root.querySelectorAll("[data-rpt-col]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const key = button.dataset.rptCol;
+      const meta = REPORT_COLUMNS.find((c) => c.key === key);
+      if (meta && meta.required) return;
+      const next = reportsVisibleColumns();
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      setReportsVisibleColumns(next);
       renderReports();
     }),
   );

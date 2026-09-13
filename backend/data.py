@@ -1,11 +1,25 @@
 """Full Data Management: tables, pivot aggregation, saved views, Asana push,
 and ingest-source status. Serves the `data` view (Data Management).
 
+Plain-language tour (this module is read by non-engineers too):
+
+* A **source** is one named pile of data you can look at — "Catalog products",
+  "Asana tasks", "Supabase — Products (live)", and so on.
+* Every source has a **resolver**: the small function that actually goes and
+  fetches the rows for that pile (out of the local SQLite database, or over
+  the network from Supabase).
+* The **routing table** (:func:`routing_table`) is the single map that says
+  which source uses which resolver, what it is called, and what type of data
+  it really is. It is data, not an if/elif chain, so a Settings screen can
+  read it, show it, and change the labels — and so an unknown source name
+  fails loudly instead of quietly handing back the wrong pile of data.
+
 Router prefix: /api/data
 """
 from __future__ import annotations
 
 import json
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 
@@ -19,6 +33,12 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 # helpers
 # --------------------------------------------------------------------------
 def _brand(attrs: dict) -> str:
+    """Pull the brand name out of a product's free-form attribute bag.
+
+    Different catalogs spell the same field differently ("brand", "Brand",
+    "BRAND", "manufacturer"), so this tries each spelling in turn and returns
+    the first non-empty one. Returns "" when the product has no brand at all.
+    """
     for k in ("brand", "Brand", "BRAND", "manufacturer"):
         v = attrs.get(k)
         if v:
@@ -27,6 +47,12 @@ def _brand(attrs: dict) -> str:
 
 
 def _latest_check(product_id: int) -> dict | None:
+    """Fetch the most recent compliance check recorded for one product.
+
+    Reads from the local SQLite database. Returns the check as a dict (score,
+    severity, status), or None if this product has never been checked — or if
+    the lookup fails, because a missing score must never break the table view.
+    """
     try:
         return storage.latest_check_by_product(product_id)
     except Exception:
@@ -34,6 +60,16 @@ def _latest_check(product_id: int) -> dict | None:
 
 
 def _product_rows(limit: int = 500, q: str = "", tag: str = "") -> list[dict]:
+    """Pull rows for the **Catalog products** source.
+
+    Where from: the local SQLite `products` table (plus each product's latest
+    compliance check, for the score/severity/status columns).
+    What you get back: one flat dict per product — sku, name, category,
+    market, brand, source, tags, created_at, score, severity, status.
+    `q` keeps only products whose name/sku/category contains that text,
+    `tag` keeps only products carrying that tag, and `limit` caps how many
+    rows come back.
+    """
     rows = []
     for p in storage.list_products(limit=1000, tag=tag or None):
         chk = _latest_check(p["id"]) or {}
@@ -57,6 +93,15 @@ def _product_rows(limit: int = 500, q: str = "", tag: str = "") -> list[dict]:
 
 
 def _asana_rows(limit: int = 500, q: str = "") -> list[dict]:
+    """Pull rows for the **Asana tasks** source.
+
+    Where from: the local SQLite `asana_tasks` mirror — the copy Conductor
+    keeps of your Asana workspace (filled in by the Asana sync), never a live
+    call to Asana from this function.
+    What you get back: one flat dict per task — id (Asana's gid), name,
+    project, assignee, completed, due_on, created_at. `q` keeps only tasks
+    whose name contains that text; `limit` caps the row count.
+    """
     rows = []
     for t in storage.list_asana_tasks(limit=min(limit, 1000)):
         name = t.get("name") or ""
@@ -74,6 +119,15 @@ def _asana_rows(limit: int = 500, q: str = "") -> list[dict]:
 
 
 def _file_rows(limit: int = 500, q: str = "") -> list[dict]:
+    """Pull rows for the **Uploaded files** source.
+
+    Where from: the local SQLite `files` table — the record of every
+    spreadsheet/CSV someone dropped into Catalog Ingest, not the file
+    contents themselves.
+    What you get back: one dict per upload — id, name (the filename),
+    status, records (how many rows were parsed out of it), size in bytes,
+    created_at. `q` matches on filename; `limit` caps the row count.
+    """
     rows = []
     for f in storage.list_files(limit=100):
         fn = f.get("filename") or ""
@@ -186,6 +240,15 @@ def _supabase_rows(schema: str, table: str, limit: int, q: str = "", *, unwrap_p
 
 
 def _supabase_count(schema: str, table: str) -> int:
+    """Ask Supabase how many rows one allowlisted table holds, without
+    downloading any of them.
+
+    Where from: the live Supabase REST API, using PostgREST's exact-count
+    header (so it reads `limit=0` plus a count, not the data).
+    What you get back: a plain integer. Returns 0 — never raises — when
+    Supabase isn't configured or the call fails, because a row count is
+    decoration on the sources list, not something worth breaking the page for.
+    """
     import supabase_sync
     import requests
 
