@@ -11,11 +11,12 @@ Module-level counters (single-user desktop app):
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(os.environ.get("CONDUCTOR_DATA_DIR") or (Path(__file__).resolve().parent.parent / "data"))
 USAGE_PATH = DATA_DIR / "usage.json"
 
 _lock = threading.Lock()

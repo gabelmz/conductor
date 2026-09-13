@@ -7,6 +7,7 @@ this transport to SQLite's current schema.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,7 +17,13 @@ from uuid import uuid4
 import requests
 from fastapi import APIRouter, HTTPException
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "supabase.json"
+# Resolved the same way as storage.DATA_DIR, but without importing storage --
+# this module deliberately stays decoupled from the SQLite layer (see docstring).
+# Reading CONDUCTOR_DATA_DIR matters in packaged builds: Electron points it at
+# userData, so credentials survive an app update instead of being written into
+# the read-only app bundle and lost on reinstall.
+DATA_DIR = Path(os.environ.get("CONDUCTOR_DATA_DIR") or (Path(__file__).resolve().parent.parent / "data"))
+CONFIG_PATH = DATA_DIR / "supabase.json"
 SUPPORTED_ENTITIES = frozenset({"products", "asana_tasks"})
 router = APIRouter(prefix="/api/supabase", tags=["supabase-sync"])
 

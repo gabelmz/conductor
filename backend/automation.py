@@ -302,13 +302,17 @@ def _render(template: str, ctx: dict) -> str:
 
 
 def _asana_client():
-    """Return (headers, base_url) for live Asana calls, or (None, None)."""
+    """Return (headers, base_url) for live Asana calls, or (None, None).
+
+    Uses asana_sync._headers() rather than reading a token directly: that is the
+    one code path that applies PAT round-robin and per-token rate pacing, so
+    automation actions share the same request budget as the sync engine.
+    """
     try:
         import asana_sync
-        cfg = asana_sync.get_config()
-        pat = cfg.get("pat") or ""
-        if pat:
-            return {"Authorization": f"Bearer {pat}", "Accept": "application/json"}, asana_sync.BASE_URL
+        if not asana_sync.has_credentials():
+            return None, None
+        return asana_sync._headers(), asana_sync.BASE_URL
     except Exception:
         pass
     return None, None

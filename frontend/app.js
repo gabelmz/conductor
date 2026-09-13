@@ -2307,7 +2307,7 @@ async function renderSettingsTab(tab) {
     const [cfgRes, provsRes, discRes, keysRes] = await Promise.allSettled([
       api("/api/chat/config"),
       api("/api/chat/providers"),
-      api("/api/llama/discover"),
+      api("/api/llama/discover?force=true"),
       api("/api/chat/keys"),
     ]);
     const cfg = cfgRes.status === "fulfilled" ? cfgRes.value : {};
@@ -8294,7 +8294,7 @@ async function loadModels() {
   list.innerHTML = '<div class="folder-loading">Loading models…</div>';
   try {
     const [disc, provs, cfg] = await Promise.all([
-      api("/api/llama/discover"),
+      api("/api/llama/discover?force=true"),
       api("/api/chat/providers"),
       api("/api/chat/config"),
     ]);

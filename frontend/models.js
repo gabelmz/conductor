@@ -234,7 +234,7 @@ async function modelsLibrary() {
   if (!box) return;
   box.innerHTML = '<div class="folder-loading">Scanning local models…</div>';
   try {
-    const [disc, llama] = await Promise.all([api('/api/llama/discover'), api('/api/llama/status')]);
+    const [disc, llama] = await Promise.all([api('/api/llama/discover?force=true'), api('/api/llama/status')]);
     modelsState.local = disc.models || [];
     modelsState.llama = llama;
   } catch (e) {
