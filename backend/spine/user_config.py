@@ -42,6 +42,12 @@ def put_configuration(scope: str, key: str, body: dict) -> dict:
         (scope, key, _json(value), 1, _json(secret_refs), now),
     )
     conn.commit()
+    if scope == "chat" and key == "preferred":
+        try:
+            from spine import preferred
+            preferred.invalidate_cache()
+        except ImportError:
+            pass
     return {"ok": True, "scope": scope, "key": key}
 
 

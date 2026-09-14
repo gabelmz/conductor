@@ -213,6 +213,7 @@ function renderView(name) {
 function showView(name) {
   state.view = name;
   window.__sidebarActiveView = name;
+  document.body.dataset.view = name;
   try {
     localStorage.setItem("conductor.view", name);
   } catch {
@@ -244,8 +245,16 @@ function showView(name) {
   $("#thread-scroll").hidden = isChat ? false : true;
   $("#view-root").hidden = isChat;
   $("#composer-shell").hidden = !isChat;
-  if (!isChat) renderView(name);
-  else {
+  if (!isChat) {
+    if (window.ConductorActionQueue) {
+      window.ConductorActionQueue.submit('nav:view', async () => {
+        renderView(name);
+      }, { coalesceGlobal: true });
+    } else {
+      renderView(name);
+    }
+  } else {
+    if (window.ConductorActionQueue) window.ConductorActionQueue.clearAll();
     $("#composer-input").focus();
   }
 }
@@ -2280,6 +2289,10 @@ async function renderSettingsTab(tab) {
     renderNavigationTab();
     return;
   }
+  if (tab === "contextmenus") {
+    renderContextMenuTab();
+    return;
+  }
   if (tab === "advanced") {
     renderAdvancedTab();
     return;
@@ -2775,7 +2788,7 @@ async function renderSettingsTab(tab) {
         /* */
       }
     }
-    const updVer = (updInfo && updInfo.version) || a.version || "2.6.0";
+    const updVer = (updInfo && updInfo.version) || a.version || "2.7.0";
     const canUpdate = !!(updInfo && updInfo.isPackaged);
     box.innerHTML = `
       <div class="settings-pane active">
@@ -3034,7 +3047,7 @@ async function refreshStatusbar() {
     $("#status-conn").textContent =
       `asana ${fmtNum(as.tasks || 0)} · ${st.automations !== undefined ? fmtNum(state.stats.automations ? state.stats.automations.total || 0 : 0) : ""} automations · db ${(st.db_size || 0) / 1024 / 1024 >= 1 ? (st.db_size / 1024 / 1024).toFixed(1) + "MB" : fmtNum(st.db_size) + "B"}`;
     $("#status-text").textContent =
-      `Connected · ${st.service || "conductor"} v${st.version || "2.6.0"}`;
+      `Connected · ${st.service || "conductor"} v${st.version || "2.7.0"}`;
   } catch {
     /* statusbar is best-effort */
   }
@@ -10474,4 +10487,144 @@ async function openFeatureEditor(id) {
       toast(`Save failed: ${e.message}`, "err");
     }
   });
+}
+
+async function renderContextMenuTab() {
+  const box = $("#settings-content");
+  box.innerHTML = `<div class="settings-pane active"><div class="folder-loading">Loading context menu preferences…</div></div>`;
+  try {
+    const prefs = await api("/api/context-menus");
+    const surfaces = ["chat", "dashboard", "asana", "keepa", "compliance", "products", "workflows", "settings", "mapping", "reports"];
+    
+    let html = `
+      <div class="settings-pane active">
+        <div class="settings-section">
+          <div class="settings-title"><span class="codicon codicon-menu"></span> Context Menu Editor</div>
+          <div class="settings-note">Customize page context menus, shortcuts, and custom actions. Revision: ${prefs.revision || 0}</div>
+        </div>
+        
+        <div class="settings-section">
+          <label style="font-size:0.8rem; font-weight:600; display:block; margin-bottom:0.4rem;">Target Surface / Page:</label>
+          <select id="cm-surface-select" class="settings-input" style="max-width:200px; padding:0.35rem 0.5rem;">
+            ${surfaces.map(s => `<option value="${s}">${s.toUpperCase()}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="settings-section" id="cm-actions-container"></div>
+
+        <div class="settings-section" style="border-top:1px solid var(--border); padding-top:1rem; margin-top:1rem;">
+          <div class="settings-title" style="font-size:0.9rem;">Add Custom Action</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-top:0.5rem;">
+            <input type="text" id="cm-custom-id" placeholder="Action ID (e.g., custom:my-link)" class="settings-input" />
+            <input type="text" id="cm-custom-label" placeholder="Label (e.g., Open Docs)" class="settings-input" />
+            <input type="text" id="cm-custom-url" placeholder="URL / API path" class="settings-input" />
+            <select id="cm-custom-type" class="settings-input">
+              <option value="open-url">Open URL (http/https)</option>
+              <option value="same-origin-api">Same-Origin API (/api/*)</option>
+              <option value="navigate-view">Navigate View</option>
+            </select>
+          </div>
+          <button class="btn-primary" id="cm-btn-add-custom" style="margin-top:0.5rem;"><span class="codicon codicon-add"></span> Add Custom Action</button>
+        </div>
+
+        <div class="settings-actions" style="margin-top:1rem;">
+          <button class="btn-secondary" id="cm-btn-reset-all"><span class="codicon codicon-history"></span> Reset All Context Menus</button>
+        </div>
+      </div>
+    `;
+    box.innerHTML = html;
+
+    const renderSurfaceItems = (surface) => {
+      const container = $("#cm-actions-container");
+      const list = window.ConductorCommands ? window.ConductorCommands.list({ view: { id: surface }, target: { kind: surface } }) : [];
+      if (!list.length) {
+        container.innerHTML = `<div style="font-size:0.8rem; color:var(--muted); padding:0.5rem 0;">No context commands registered for surface '${surface}'.</div>`;
+        return;
+      }
+      let itemsHtml = `<table style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+        <thead>
+          <tr style="text-align:left; border-bottom:1px solid var(--border);">
+            <th style="padding:0.4rem;">Command</th>
+            <th style="padding:0.4rem;">Label</th>
+            <th style="padding:0.4rem;">Shortcut</th>
+            <th style="padding:0.4rem;">Order</th>
+          </tr>
+        </thead>
+        <tbody>`;
+      list.forEach(c => {
+        itemsHtml += `<tr style="border-bottom:1px solid color-mix(in srgb, var(--border) 40%, transparent);">
+          <td style="padding:0.4rem;"><code>${c.id}</code></td>
+          <td style="padding:0.4rem;">${c.label}</td>
+          <td style="padding:0.4rem;">${c.shortcut || '-'}</td>
+          <td style="padding:0.4rem;">${c.order || 0}</td>
+        </tr>`;
+      });
+      itemsHtml += `</tbody></table>`;
+      container.innerHTML = itemsHtml;
+    };
+
+    const sel = $("#cm-surface-select");
+    sel.addEventListener("change", (e) => renderSurfaceItems(e.target.value));
+    renderSurfaceItems(sel.value);
+
+    $("#cm-btn-add-custom").addEventListener("click", async () => {
+      const id = $("#cm-custom-id").value.trim();
+      const label = $("#cm-custom-label").value.trim();
+      const val = $("#cm-custom-url").value.trim();
+      const type = $("#cm-custom-type").value;
+      const surface = sel.value;
+
+      if (!id || !label) {
+        alert("ID and Label are required");
+        return;
+      }
+
+      let actionObj = {};
+      if (type === "open-url") actionObj = { type: "open-url", url: val || "https://example.com" };
+      else if (type === "same-origin-api") actionObj = { type: "same-origin-api", path: val || "/api/health", method: "GET" };
+      else actionObj = { type: "navigate-view", viewId: val || surface };
+
+      const customActions = prefs.customActions || [];
+      customActions.push({
+        id,
+        label,
+        surface,
+        icon: "codicon-link",
+        action: actionObj,
+      });
+
+      try {
+        await api("/api/context-menus", {
+          method: "PUT",
+          body: JSON.stringify({
+            baseRevision: prefs.revision || 0,
+            overrides: prefs.overrides || {},
+            customActions,
+          }),
+        });
+        toast("Custom context action added!", "ok");
+        renderContextMenuTab();
+      } catch (e) {
+        toast("Failed to save custom action", "err");
+      }
+    });
+
+    $("#cm-btn-reset-all").addEventListener("click", async () => {
+      if (confirm("Reset all context menu preferences to defaults?")) {
+        try {
+          await api("/api/context-menus/reset-all", {
+            method: "POST",
+            body: JSON.stringify({ baseRevision: prefs.revision || 0 }),
+          });
+          toast("Reset all context menus to default", "ok");
+          renderContextMenuTab();
+        } catch (e) {
+          toast("Reset failed", "err");
+        }
+      }
+    });
+
+  } catch (e) {
+    box.innerHTML = `<div class="settings-pane active"><div class="settings-note" style="color:var(--danger,#f38ba8)">Failed to load context menu settings.</div></div>`;
+  }
 }

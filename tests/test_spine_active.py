@@ -22,6 +22,7 @@ def setup_temp_db(tmp_path, monkeypatch):
     storage._local = threading.local()
     storage.init_db()
     init_tables()
+    preferred.invalidate_cache()
     monkeypatch.setattr(providers, "CONFIG_PATH", tmp_path / "provider-config.json")
     monkeypatch.setattr(providers, "KEYS_PATH", tmp_path / "provider-keys.json")
 

@@ -26,14 +26,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import storage
-import automation
-import bernie
-import asana_rules
 import ai_ingest
 from agents import DEV_ROOT, _safe_walk, list_agents, run_quick_action
-from chat import router as chat_router
-from llama import router as llama_router
-from ui import router as ui_router
 from compliance import REGULATIONS, evaluate_product, overall_score, overall_severity
 from ingestion import (
     complete_upload, init_upload, run_compliance, upload_status, write_chunk,
@@ -49,11 +43,11 @@ from localsources import init_local_sources_db
 from productpipeline import init_product_pipeline_db
 from insights import init_insights_db
 from attributeaudit import init_attribute_audit_db
-from kpi import init_kpi_db, seed_kpis_from_excel, kpi_router, wrangler_router
-from reporting.team_kpis import router as asana_kpis_router
-from reporting.listing_content import init_listing_compare_db, router as listing_compare_router
-from spine import init_spine_db, router as spine_router
-from brand_onboarding import onboarding_router
+from kpi import init_kpi_db, seed_kpis_from_excel
+from reporting.listing_content import init_listing_compare_db
+from spine import init_spine_db
+from dataset_store import init_dataset_store
+from router_registry import register_all_routers
 
 init_hub_db()
 init_keepa_db()
@@ -65,6 +59,7 @@ init_attribute_audit_db()
 init_kpi_db()
 init_spine_db()
 init_listing_compare_db()
+init_dataset_store()
 seed_kpis_from_excel()
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -86,7 +81,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="Conductor",
     description="Conductor — business process automation hub with AI workflows.",
-    version="2.6.0",
+    version="2.7.0",
     lifespan=lifespan,
 )
 
@@ -133,7 +128,7 @@ def health():
     return {
         "status": "ok",
         "service": "conductor",
-        "version": "2.6.0",
+        "version": "2.7.0",
         "products": storage.count_products(),
     }
 
@@ -196,7 +191,7 @@ def list_update_versions():
 
     releases.sort(key=lambda x: x["version"], reverse=True)
     return {
-        "current_version": "2.6.0",
+        "current_version": "2.7.0",
         "versions": releases,
     }
 
@@ -924,7 +919,7 @@ def stats():
         "db_size": db_size,
         "uptime_s": round(time.monotonic() - _START_TIME),
         "service": "conductor",
-        "version": "2.6.0",
+        "version": "2.7.0",
         "latest_jobs": storage.list_jobs(limit=5),
         # --- new statusbar fields (additive only — old keys unchanged) ---
         "model": model,
@@ -986,63 +981,7 @@ def vault_tree(path: str = ""):
             "dirs": dirs[:80], "files": files[:60]}
 
 
-app.include_router(chat_router)
-app.include_router(llama_router)
-app.include_router(ui_router)
-app.include_router(automation.router)
-app.include_router(bernie.router)
-app.include_router(asana_rules.router)
-from plugins import router as plugins_router
-from hub import router as hub_router
-from reports import router as reports_router
-from guidelines import router as guidelines_router
-from flatfiles import router as flatfiles_router
-from svl import router as svl_router
-from data import router as data_router
-from settings_api import router as settings_api_router
-from features import router as features_router
-from brandcompare import router as brandcompare_router
-from keepa import router as keepa_router
-from people import router as people_router
-from bulkimport import router as bulkimport_router
-from localsources import router as localsources_router
-from productpipeline import router as productpipeline_router
-from insights import router as insights_router
-from attributeaudit import router as attributeaudit_router
-from hf import router as hf_router
-from mcp_servers import router as mcp_router
-from supabase_sync import router as supabase_sync_router
-from mapping import router as mapping_router
-from report_presets import router as report_presets_router
-
-app.include_router(plugins_router)
-app.include_router(hub_router)
-app.include_router(reports_router)
-app.include_router(guidelines_router)
-app.include_router(flatfiles_router)
-app.include_router(svl_router)
-app.include_router(data_router)
-app.include_router(settings_api_router)
-app.include_router(features_router)
-app.include_router(brandcompare_router)
-app.include_router(keepa_router)
-app.include_router(people_router)
-app.include_router(bulkimport_router)
-app.include_router(localsources_router)
-app.include_router(productpipeline_router)
-app.include_router(insights_router)
-app.include_router(attributeaudit_router)
-app.include_router(hf_router)
-app.include_router(mcp_router)
-app.include_router(supabase_sync_router)
-app.include_router(spine_router)
-app.include_router(asana_kpis_router)
-app.include_router(listing_compare_router)
-app.include_router(kpi_router)
-app.include_router(wrangler_router)
-app.include_router(onboarding_router)
-app.include_router(mapping_router)
-app.include_router(report_presets_router)
+register_all_routers(app)
 
 
 # --------------------------------------------------------------------------

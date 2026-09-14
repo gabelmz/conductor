@@ -2040,6 +2040,93 @@ body.bernie-fullscreen .view-root { flex: 1; overflow: hidden; padding: 0; }
 .bn-context-menu button.bn-danger { color: #f87171; }
 .bn-context-menu button.bn-danger:hover { background: color-mix(in srgb, #f87171 12%, transparent); }
 
+/* ---- Global Conductor Context Menu ---- */
+.conductor-context-menu {
+  position: fixed;
+  z-index: 99999;
+  min-width: 14rem;
+  max-width: 22rem;
+  background: color-mix(in srgb, var(--card, #1e1e2e) 95%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid color-mix(in srgb, var(--border, #313244) 80%, white 10%);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+}
+.conductor-context-menu.is-open {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+.conductor-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--foreground, #cdd6f4);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.conductor-context-menu-item:hover,
+.conductor-context-menu-item:focus {
+  background: color-mix(in srgb, var(--accent, #89b4fa) 18%, transparent);
+  color: #ffffff;
+  outline: none;
+}
+.conductor-context-menu-item.is-destructive {
+  color: #f38ba8;
+}
+.conductor-context-menu-item.is-destructive:hover {
+  background: color-mix(in srgb, #f38ba8 20%, transparent);
+  color: #f38ba8;
+}
+.conductor-context-menu-item[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent !important;
+}
+.conductor-context-menu-icon {
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  opacity: 0.85;
+}
+.conductor-context-menu-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conductor-context-menu-shortcut {
+  font-size: 0.72rem;
+  opacity: 0.55;
+  margin-left: 0.5rem;
+}
+.conductor-context-menu-separator {
+  height: 1px;
+  background: color-mix(in srgb, var(--border, #313244) 60%, transparent);
+  margin: 0.25rem 0.2rem;
+}
+
 /* ---- flyouts (grid / minimap settings) ---- */
 .bn-flyout {
   position: absolute; top: 4.1rem; right: 1.1rem; z-index: 60; width: 16.5rem;

@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.7.0 - 2026-09-14
+
+### Modular Architecture & Domain Routers
+- Refactored 30+ FastAPI endpoints into clean domain groups in `backend/router_registry.py` (Core, Workflows, Data, Integrations, Reports, Settings).
+- Streamlined `backend/main.py` entrypoint with unified `register_all_routers(app)`.
+
+### Local Dataset Store & WAL Checkpointing
+- Added raw-to-staging dataset store (`backend/dataset_store.py`) with pre-computed page view caching and automated schema detection.
+- Integrated SQLite WAL checkpoint manager (`PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`).
+
+### Unified Cross-Channel Search Engine
+- Added `backend/search.py` for parallel search across Catalog, Asana, Keepa, and Supabase with coverage gap analysis.
+
+### Context Menu Editor & Performance Optimization
+- Added UI Context Menu Editor tab in Settings (`frontend/app.js` and `frontend/page-context-menu.js`) with custom user actions.
+- Added LIFO Action Queue & Request Coalescing manager (`frontend/action-queue.js`) with `AbortController` cancellation for instantaneous view switching.
+
 ## v2.6.0 - 2026-09-12
 
 ### Report-Format Presets & Schema Mapping (new)

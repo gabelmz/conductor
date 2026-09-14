@@ -54,6 +54,11 @@ def put_preferred_model(body: dict) -> dict:
     return preferred.set_preferred(body)
 
 
+@router.delete("/models/preferred")
+def delete_preferred_model() -> dict:
+    return preferred.clear_preferred()
+
+
 @router.get("/models/active")
 def get_active_model() -> dict:
     return active.resolve_active_chat_target()

@@ -62,3 +62,16 @@ def test_spine_glossary_filters_local_registry(client):
     response = client.get("/api/spine/glossary", params={"q": "Keepa", "kind": "feature"})
     assert response.status_code == 200
     assert response.json()["count"] >= 1
+
+
+def test_sqlite_pragmas_applied():
+    conn = storage._conn()
+    journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    synchronous = conn.execute("PRAGMA synchronous").fetchone()[0]
+    busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+
+    assert str(journal_mode).lower() == "wal"
+    assert synchronous == 1  # 1 corresponds to NORMAL in SQLite
+    assert busy_timeout == 5000
+    assert foreign_keys == 1  # 1 corresponds to ON in SQLite

@@ -1,7 +1,7 @@
 {
   "name": "conductor",
   "productName": "Conductor",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "private": true,
   "description": "Conductor — business process automation hub with AI workflows (desktop)",
   "main": "main.cjs",
@@ -52,17 +52,14 @@
         "to": "backend",
         "filter": [
           "**/*",
-          "!**/__pycache__/**",
-          "!context_menus.py"
+          "!**/__pycache__/**"
         ]
       },
       {
         "from": "../frontend",
         "to": "frontend",
         "filter": [
-          "**/*",
-          "!commands.js",
-          "!context-menu.js"
+          "**/*"
         ]
       },
       {

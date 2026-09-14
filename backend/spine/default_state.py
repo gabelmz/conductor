@@ -65,6 +65,11 @@ DATASETS = [
     ("suggested_content", "Suggested Listing Content", "Uploaded or connected proposed listing attributes.", "listing_content", "upload", 86400),
     ("live_listing_content", "Live Listing Content", "Latest retrieved listing attributes used for comparison.", "listing_content", "sp_api", 172800),
     ("listing_comparisons", "Listing Comparisons", "Field-level suggested-vs-live comparison records and recommendations.", "listing_comparison", "computed", 0),
+    ("dataset_store_raw", "Raw Dataset Store", "Raw incoming datasets stored under local-store/raw.", "dataset", "local_store", 0),
+    ("dataset_store_staging", "Staging Dataset Store", "Standardized and validated datasets stored under local-store/staging.", "dataset", "local_store", 0),
+    ("dataset_store_views", "Pre-computed Page Views", "Cached page view feeds stored under local-store/views.", "view", "local_store", 0),
+    ("global_search", "Cross-Channel Search Index", "Parallel search index across Catalog, Asana, Keepa, and Supabase.", "search", "search_engine", 0),
+    ("local_store_backups", "Local Database Backups", "WAL-safe database snapshots and configuration backups.", "backup", "local_store", 0),
 ]
 
 FILTERS = [
@@ -98,6 +103,7 @@ def seed_defaults() -> None:
     _seed_models(conn, now)
     _seed_registry(conn, now)
     _seed_report_presets(conn, now)
+    _seed_services(conn, now)
     conn.commit()
 
 
@@ -176,4 +182,23 @@ def _seed_report_presets(conn, now: str) -> None:
             (report_presets.REGISTRY_KIND, key, preset.get("label", key),
              preset.get("description", ""), "report-presets", "codicon-file", "active", "stable",
              "[]", _json(payload), digest, now, now),
+        )
+
+
+SERVICES = [
+    ("dataset_store", "Dataset Store & Pipeline Manager", "Automated raw-to-staging dataset pipeline and local storage.", "/api/dataset-store", "codicon-folder-library"),
+    ("global_search", "Unified Cross-Channel Search", "Parallel search across Catalog, Asana, Keepa, and Supabase with gap analysis.", "/api/search/global", "codicon-search"),
+    ("context_menus", "Context Menu Preference Engine", "Global context menu preferences, surface overrides, and custom actions.", "/api/context-menus", "codicon-menu"),
+    ("wal_checkpoint", "SQLite WAL Checkpoint Manager", "WAL checkpoint execution and WAL frame log management.", "/api/dataset-store/wal-checkpoint", "codicon-database"),
+]
+
+
+def _seed_services(conn, now: str) -> None:
+    for key, label, desc, route, icon in SERVICES:
+        payload = {"route": route}
+        digest = hashlib.sha256(_json(payload).encode()).hexdigest()
+        conn.execute(
+            "INSERT INTO spine_registry VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(kind,registry_key) DO UPDATE SET label=excluded.label,description=excluded.description,route=excluded.route,icon=excluded.icon,metadata=excluded.metadata,source_hash=excluded.source_hash,updated_at=excluded.updated_at",
+            ("service", key, label, desc, route, icon, "active", "stable", "[]", _json(payload), digest, now, now),
         )

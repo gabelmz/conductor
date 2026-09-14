@@ -7,23 +7,16 @@ import urllib.error
 from pathlib import Path
 
 REPO = "gabelmz/conductor"
-TAG = "v2.6.0"
-TITLE = "v2.6.0: Report-Format Presets, Schema Mapping & Model Gallery"
-BODY = """# Conductor v2.6.0 Release
+TAG = "v2.7.0"
+TITLE = "v2.7.0: Domain Router Architecture, Dataset Pipeline & Context Menu Engine"
+BODY = """# Conductor v2.7.0 Release
 
 ### Key Highlights
-- **Report-Format Presets**: auto-recognises the nine report formats the catalog
-  department receives (KPI definitions, employee roster, ASIN map, CDQ report,
-  reviews+OPS, Amazon listings, handover docs, FBA shipments, sales-by-collection)
-  with typed field schemas, user-editable and tagged onto the spine.
-- **Schema & Header Mapping**: new Mapping page for fuzzy/AI header-to-field
-  reconciliation of new uploads, schemas and syncs.
-- **Model Gallery**: animated JSON model cards with hardware-fit highlighting.
-- **Asana**: up to 4 PATs with round-robin, exponential backoff, quarantine on
-  repeated 401s, and per-run telemetry.
-- **Providers**: Anthropic removed from the app catalog (22 openai-compatible).
-- **Reliability**: fixed silent failures from missing imports, replaced the
-  deprecated startup hook, bounded hot-path queries.
+- **Domain Router Architecture**: refactored 30+ FastAPI routes into clean domain-bound router modules (`router_registry.py`).
+- **Local Dataset Store & WAL Checkpoints**: automated raw-to-staging dataset storage, view caching, and SQLite WAL checkpoint manager.
+- **Unified Search Engine**: parallel cross-channel search spanning Catalog, Asana, Keepa, and Supabase with coverage gap analysis.
+- **Context Menu Customization**: user-definable page context menus and custom action handlers (`page-context-menu.js`).
+- **Input Lag & Task Coalescing**: LIFO Action Queue (`action-queue.js`) with request abort controller cancellation.
 """
 
 DIST_DIR = Path(r"C:\Users\GabeMaher\Documents\Development\Vaults\luminize-vault\Development\apps\conductor\dist")
@@ -80,8 +73,8 @@ def main():
 
     # 2. Upload release assets (single-file NSIS installer + blockmap + latest.yml)
     assets_to_upload = [
-        ("Conductor-Setup-2.6.0.exe", "application/octet-stream"),
-        ("Conductor-Setup-2.6.0.exe.blockmap", "application/octet-stream"),
+        ("Conductor-Setup-2.7.0.exe", "application/octet-stream"),
+        ("Conductor-Setup-2.7.0.exe.blockmap", "application/octet-stream"),
         ("latest.yml", "text/yaml"),
     ]
 

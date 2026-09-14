@@ -24,6 +24,9 @@ def _conn() -> sqlite3.Connection:
         conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
         _local.conn = conn
     return _local.conn
 
@@ -31,13 +34,7 @@ def _conn() -> sqlite3.Connection:
 @contextlib.contextmanager
 def batch_writes(flush_every: int = 500):
     """Suspend ``_upsert``'s per-row auto-commit on this thread, committing every
-    ``flush_every`` rows instead (plus a final commit on exit, success or error).
-
-    ``_upsert`` normally commits after every single row, which is fine for one-off writes
-    but pathological for a bulk pull (e.g. Asana's 266k-task workspace) — hundreds of
-    thousands of individual fsync'd commits. Batching still bounds memory (rows are written
-    to the DB as they're upserted, never held in Python) and how much work an interruption
-    can lose (at most ``flush_every`` rows), just without a commit per row.
+    ``flush_every`` rows instead (plus a final commit on exit, or rollback on error).
 
     Thread-local (mirrors ``_conn()``) so it only affects the calling thread — a bulk sync
     runs on its own background thread (see ``main.py``'s ``asana_sync_start``), so unrelated
